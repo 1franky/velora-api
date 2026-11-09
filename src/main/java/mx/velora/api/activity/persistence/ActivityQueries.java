@@ -16,6 +16,7 @@ import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import mx.velora.api.activity.ActivitySubType;
+import mx.velora.api.activity.ActivitySummary;
 import mx.velora.api.activity.StreamType;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
@@ -25,21 +26,8 @@ import org.springframework.stereotype.Repository;
 @Repository
 public class ActivityQueries {
 
-    public record Summary(
-            UUID id,
-            String title,
-            Instant startedAt,
-            LocalDate localStartDate,
-            ActivitySubType subType,
-            @Nullable BigDecimal distanceMeters,
-            long movingTimeSeconds,
-            long elapsedTimeSeconds,
-            @Nullable BigDecimal elevationGainMeters,
-            @Nullable BigDecimal averageSpeedMps,
-            @Nullable UUID bikeId) {}
-
     public record Detail(
-            Summary summary,
+            ActivitySummary summary,
             String timeZone,
             String sourceType,
             @Nullable UUID deviceId,
@@ -96,7 +84,7 @@ public class ActivityQueries {
     }
 
     /** Hasta {@code limit} actividades después de {@code after}, de la más reciente a la más antigua. */
-    public List<Summary> list(UUID userId, Filter filter, @Nullable Position after, int limit) {
+    public List<ActivitySummary> list(UUID userId, Filter filter, @Nullable Position after, int limit) {
         var sql = new StringBuilder("SELECT " + SUMMARY_COLUMNS + " FROM activities a WHERE a.user_id = :user");
         var params = new LinkedHashMap<String, Object>();
         params.put("user", userId);
@@ -223,8 +211,8 @@ public class ActivityQueries {
         return new Streams(count[0], values);
     }
 
-    private static Summary summary(ResultSet rs, int row) throws SQLException {
-        return new Summary(
+    static ActivitySummary summary(ResultSet rs, int row) throws SQLException {
+        return new ActivitySummary(
                 rs.getObject("id", UUID.class),
                 rs.getString("title"),
                 rs.getTimestamp("started_at").toInstant(),

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.5.0
+  version: 1.6.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -396,14 +396,27 @@ paths:
         '404': { $ref: '#/components/responses/NotFound' }
   /dashboard/summary:
     get:
-      summary: Resumen del dashboard
+      summary: Resumen del dashboard para un periodo
+      description: >
+        Calculado al vuelo sobre la fecha deportiva local de cada actividad. Semanas de lunes a domingo
+        (ISO-8601); meses y años de calendario. El periodo anterior tiene la misma duración y termina justo antes.
+      operationId: getDashboardSummary
       parameters:
         - in: query
           name: period
-          schema: { type: string, enum: [week, month, year, all] }
+          schema: { type: string, enum: [week, month, year, all], default: month }
+        - in: query
+          name: date
+          description: Fecha local de referencia dentro del periodo; por defecto, hoy en la zona horaria del usuario.
+          schema: { type: string, format: date }
       responses:
         '200':
-          description: Resumen de métricas
+          description: Resumen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/DashboardSummary' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /geo/heatmap:
     get:
       summary: Obtener heatmap del usuario
@@ -572,6 +585,46 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 100 }
         manufacturer: { type: [string, 'null'], maxLength: 100 }
         model: { type: [string, 'null'], maxLength: 100 }
+    PeriodTotals:
+      type: object
+      required: [from, to, activityCount, distanceMeters, movingTimeSeconds, elevationGainMeters]
+      properties:
+        from: { type: [string, 'null'], format: date, description: Primera fecha local incluida; null en "all". }
+        to: { type: [string, 'null'], format: date, description: Última fecha local incluida; null en "all". }
+        activityCount: { type: integer, minimum: 0 }
+        distanceMeters: { type: number, minimum: 0 }
+        movingTimeSeconds: { type: integer, minimum: 0 }
+        elevationGainMeters: { type: number, minimum: 0 }
+    MonthlyTotals:
+      type: object
+      required: [month, activityCount, distanceMeters, movingTimeSeconds, elevationGainMeters]
+      properties:
+        month: { type: string, pattern: '^[0-9]{4}-[0-9]{2}$' }
+        activityCount: { type: integer, minimum: 0 }
+        distanceMeters: { type: number, minimum: 0 }
+        movingTimeSeconds: { type: integer, minimum: 0 }
+        elevationGainMeters: { type: number, minimum: 0 }
+    DashboardSummary:
+      type: object
+      required: [period, timeZone, current, previous, monthlyTrend, latestActivity]
+      properties:
+        period: { type: string, enum: [week, month, year, all] }
+        timeZone: { type: string }
+        current: { $ref: '#/components/schemas/PeriodTotals' }
+        previous:
+          description: Periodo anterior de igual duración; null en "all".
+          oneOf:
+            - { $ref: '#/components/schemas/PeriodTotals' }
+            - { type: 'null' }
+        monthlyTrend:
+          type: array
+          description: Los 12 meses que terminan en el mes de referencia, del más antiguo al más reciente, con ceros.
+          items: { $ref: '#/components/schemas/MonthlyTotals' }
+        latestActivity:
+          description: Actividad más reciente del usuario, o null si no hay ninguna.
+          oneOf:
+            - { $ref: '#/components/schemas/ActivitySummary' }
+            - { type: 'null' }
     ActivitySubType:
       type: string
       enum: [MOUNTAIN_BIKE, ROAD, GRAVEL, INDOOR, OTHER]
