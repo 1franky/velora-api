@@ -25,6 +25,12 @@ spring:
   mvc:
     problemdetails:
       enabled: true
+  servlet:
+    multipart:
+      # Un poco más que velora.storage.max-file-size: el almacén aplica el límite exacto (413 en ambos casos).
+      max-file-size: 51MB
+      max-request-size: 52MB
+      file-size-threshold: 1MB
   messages:
     basename: messages
     encoding: UTF-8
@@ -55,6 +61,18 @@ management:
 velora:
   defaults:
     time-zone: America/Mexico_City
+  storage:
+    originals-path: ${VELORA_STORAGE_ORIGINALS_PATH:data/originals}
+    max-file-size: 50MB
+  import:
+    max-attempts: 3
+    retry-base-delay: PT30S
+    max-points: 200000
+    worker:
+      enabled: true
+      poll-interval: PT2S
+      batch-size: 5
+      lock-duration: PT5M
   auth:
     access-token-ttl: PT15M
     refresh-token-ttl: P30D

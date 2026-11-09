@@ -87,6 +87,16 @@ El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen
 
 Después del parseo, `ActivityValidator` rechaza actividades sin muestras, sin tiempos o con tiempos imposibles, y sanea coordenadas inválidas, saltos de GPS y valores negativos dejando el dato en `null` con una advertencia. `ActivityFootprint` resume inicio, duración, distancia (informada o derivada) y recuadro para la deduplicación heurística (`DuplicateHeuristic`), que solo advierte y nunca descarta. Reglas y umbrales en ADR-009. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
 
+## Importar actividades por la API
+
+```bash
+curl -H "Authorization: Bearer $TOKEN" -F file=@rodada.fit [-F bikeId=...] [-F activityTitle=...] \
+     http://localhost:8080/api/v1/activities/imports        # 202 { jobId, status: QUEUED, statusUrl }
+curl -H "Authorization: Bearer $TOKEN" http://localhost:8080/api/v1/imports/<jobId>
+```
+
+Un worker dentro de la API procesa la cola (`import_jobs`, `FOR UPDATE SKIP LOCKED`): verifica el SHA-256 del original, parsea, valida, deriva métricas, deduplica y registra. Estados: `COMPLETED`, `DUPLICATE` (mismo archivo o mismo `file_id` FIT; el original repetido se descarta), `REJECTED` (archivo inválido, con `errorCode` y `errorDetail` en es-MX), `FAILED` (tras 3 intentos con espera creciente). Un trabajo interrumpido por un reinicio se recupera al vencer su bloqueo (5 min). Configuración en `velora.import.*`.
+
 ## Actividades
 
 El módulo `activity` registra actividades validadas en una sola transacción (ADR-012): `activities` con valores efectivos (prefieren el dato del dispositivo), `activity_metrics` con métricas del dispositivo y derivadas por separado, `activity_tracks` (`MultiLineString`, un tramo por segmento), vueltas, streams en `bytea` con el códec `velora-streams/1` y la referencia al archivo original.
