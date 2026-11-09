@@ -99,6 +99,8 @@ Un worker dentro de la API procesa la cola (`import_jobs`, `FOR UPDATE SKIP LOCK
 
 ## Actividades
 
+Consulta: `GET /api/v1/activities` (de la más reciente a la más antigua; filtros `from`/`to` por fecha deportiva local, `bikeId`, `subType`, `minDistanceM`/`maxDistanceM`; paginación con `cursor` opaco y `limit` ≤ 100), `GET /activities/{id}` (con procedencia de cada métrica), `/streams?types=…` y `/laps`. `DELETE /activities/{id}` borra todo lo derivado y, tras confirmar la transacción, el archivo original; el mismo archivo puede volver a importarse.
+
 El módulo `activity` registra actividades validadas en una sola transacción (ADR-012): `activities` con valores efectivos (prefieren el dato del dispositivo), `activity_metrics` con métricas del dispositivo y derivadas por separado, `activity_tracks` (`MultiLineString`, un tramo por segmento), vueltas, streams en `bytea` con el códec `velora-streams/1` y la referencia al archivo original.
 
 Los originales se guardan en disco (ADR-013) en `VELORA_STORAGE_ORIGINALS_PATH` (por defecto `data/originals`, ignorado por Git), con escritura atómica, permisos solo para el propietario del proceso y verificación de SHA-256 al leer.
