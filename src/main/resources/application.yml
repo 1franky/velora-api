@@ -1,6 +1,9 @@
 spring:
   application:
     name: velora-api
+  autoconfigure:
+    # Sin usuario en memoria con contraseña generada: la autenticación es propia (ADR-010).
+    exclude: org.springframework.boot.security.autoconfigure.UserDetailsServiceAutoConfiguration
   datasource:
     url: ${VELORA_DB_URL:jdbc:postgresql://localhost:5432/velora}
     username: ${VELORA_DB_USERNAME:velora}
@@ -48,3 +51,11 @@ management:
 velora:
   defaults:
     time-zone: America/Mexico_City
+  auth:
+    access-token-ttl: PT15M
+    refresh-token-ttl: P30D
+    throttle:
+      free-failures: 5
+      window: PT15M
+      base-delay: PT30S
+      max-delay: PT15M

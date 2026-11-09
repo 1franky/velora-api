@@ -8,16 +8,11 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
-import org.springframework.boot.test.context.SpringBootTest;
-import org.springframework.boot.webmvc.test.autoconfigure.AutoConfigureMockMvc;
-import org.springframework.context.annotation.Import;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.JdbcTemplate;
 import org.springframework.test.web.servlet.MockMvc;
 
-@Import(TestcontainersConfiguration.class)
-@SpringBootTest
-@AutoConfigureMockMvc
+@IntegrationTest
 class VeloraApiApplicationTests {
 
     @Autowired
@@ -46,12 +41,13 @@ class VeloraApiApplicationTests {
     }
 
     @Test
-    void unknownRouteReturnsProblemDetail() throws Exception {
+    void unauthenticatedRequestToAnyApiRouteReturnsSpanishProblem() throws Exception {
+        // Sin token no se revela si la ruta existe: 401 antes que 404.
         mvc.perform(get("/api/v1/no-existe"))
-                .andExpect(status().isNotFound())
+                .andExpect(status().isUnauthorized())
                 .andExpect(content().contentTypeCompatibleWith(MediaType.APPLICATION_PROBLEM_JSON))
-                .andExpect(jsonPath("$.status").value(404))
-                .andExpect(jsonPath("$.title").value("No encontrado"))
-                .andExpect(jsonPath("$.detail").value("El recurso solicitado no existe."));
+                .andExpect(jsonPath("$.status").value(401))
+                .andExpect(jsonPath("$.title").value("No autenticado"))
+                .andExpect(jsonPath("$.detail").value("Inicia sesión para continuar."));
     }
 }
