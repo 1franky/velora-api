@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.3.0
+  version: 1.4.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -197,20 +197,33 @@ paths:
         '401': { $ref: '#/components/responses/Unauthorized' }
   /activities:
     get:
-      summary: Listar actividades
+      summary: Listar actividades, de la más reciente a la más antigua
+      operationId: listActivities
       parameters:
         - in: query
           name: from
+          description: Fecha deportiva local inicial (incluida).
           schema: { type: string, format: date }
         - in: query
           name: to
+          description: Fecha deportiva local final (incluida).
           schema: { type: string, format: date }
         - in: query
           name: bikeId
           schema: { type: string, format: uuid }
         - in: query
+          name: subType
+          schema: { $ref: '#/components/schemas/ActivitySubType' }
+        - in: query
+          name: minDistanceM
+          schema: { type: number, minimum: 0 }
+        - in: query
+          name: maxDistanceM
+          schema: { type: number, minimum: 0 }
+        - in: query
           name: cursor
-          schema: { type: string }
+          description: Valor opaco de nextCursor de la página anterior.
+          schema: { type: string, maxLength: 200 }
         - in: query
           name: limit
           schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
@@ -221,12 +234,85 @@ paths:
             application/json:
               schema:
                 type: object
+                required: [items, nextCursor]
                 properties:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/ActivitySummary' }
                   nextCursor:
                     type: [string, 'null']
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /activities/{activityId}:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Detalle de una actividad
+      operationId: getActivity
+      responses:
+        '200':
+          description: Actividad
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Borrar una actividad, sus datos derivados y su archivo original
+      operationId: deleteActivity
+      responses:
+        '204': { description: Actividad borrada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/streams:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Series por muestra de una actividad
+      operationId: getActivityStreams
+      parameters:
+        - in: query
+          name: types
+          description: Tipos separados por coma; por defecto, todos los disponibles.
+          schema: { type: string, maxLength: 200 }
+      responses:
+        '200':
+          description: Streams
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityStreams' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/laps:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Vueltas de una actividad
+      operationId: getActivityLaps
+      responses:
+        '200':
+          description: Vueltas
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivityLap' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /activities/imports:
     post:
       summary: Importar actividad desde FIT, GPX o TCX
@@ -465,19 +551,111 @@ components:
         displayName: { type: string, minLength: 1, maxLength: 100 }
         manufacturer: { type: [string, 'null'], maxLength: 100 }
         model: { type: [string, 'null'], maxLength: 100 }
+    ActivitySubType:
+      type: string
+      enum: [MOUNTAIN_BIKE, ROAD, GRAVEL, INDOOR, OTHER]
+    MetricSource:
+      type: string
+      enum: [DEVICE_REPORTED, DERIVED]
     ActivitySummary:
       type: object
-      required: [id, title, startedAt, distanceMeters, movingTimeSeconds]
+      required: [id, title, startedAt, localStartDate, subType, distanceMeters, movingTimeSeconds,
+                 elapsedTimeSeconds, elevationGainMeters, averageSpeedMps, bikeId]
       properties:
         id: { type: string, format: uuid }
         title: { type: string }
         startedAt: { type: string, format: date-time }
-        distanceMeters: { type: number }
-        movingTimeSeconds: { type: integer }
-        elevationGainMeters: { type: [number, 'null'] }
-        subType:
+        localStartDate:
           type: string
-          enum: [MOUNTAIN_BIKE, ROAD, GRAVEL, INDOOR, OTHER]
+          format: date
+          description: Fecha deportiva local según la zona horaria del usuario al importar.
+        subType: { $ref: '#/components/schemas/ActivitySubType' }
+        distanceMeters:
+          type: [number, 'null']
+          description: Null si no hay datos (p. ej. rodillo sin sensor de velocidad).
+        movingTimeSeconds: { type: integer, minimum: 0 }
+        elapsedTimeSeconds: { type: integer, minimum: 0 }
+        elevationGainMeters: { type: [number, 'null'] }
+        averageSpeedMps: { type: [number, 'null'] }
+        bikeId: { type: [string, 'null'], format: uuid }
+    ActivityDetail:
+      type: object
+      description: Todos los campos de ActivitySummary más los de detalle.
+      required: [id, title, startedAt, localStartDate, subType, distanceMeters, movingTimeSeconds,
+                 elapsedTimeSeconds, elevationGainMeters, averageSpeedMps, bikeId, timeZone, sourceType, deviceId,
+                 elevationLossMeters, maxSpeedMps, averageHeartRateBpm, maxHeartRateBpm, averagePowerWatts,
+                 maxPowerWatts, averageCadenceRpm, metricsProvenance, hasTrack, streamTypes, lapCount, originalFile]
+      properties:
+        id: { type: string, format: uuid }
+        title: { type: string }
+        startedAt: { type: string, format: date-time }
+        localStartDate: { type: string, format: date }
+        subType: { $ref: '#/components/schemas/ActivitySubType' }
+        distanceMeters: { type: [number, 'null'] }
+        movingTimeSeconds: { type: integer, minimum: 0 }
+        elapsedTimeSeconds: { type: integer, minimum: 0 }
+        elevationGainMeters: { type: [number, 'null'] }
+        averageSpeedMps: { type: [number, 'null'] }
+        bikeId: { type: [string, 'null'], format: uuid }
+        timeZone: { type: string }
+        sourceType: { type: string, enum: [FIT, GPX, TCX] }
+        deviceId: { type: [string, 'null'], format: uuid }
+        elevationLossMeters: { type: [number, 'null'] }
+        maxSpeedMps: { type: [number, 'null'] }
+        averageHeartRateBpm: { type: [integer, 'null'] }
+        maxHeartRateBpm: { type: [integer, 'null'] }
+        averagePowerWatts: { type: [integer, 'null'] }
+        maxPowerWatts: { type: [integer, 'null'] }
+        averageCadenceRpm: { type: [integer, 'null'] }
+        metricsProvenance:
+          type: object
+          description: Origen de cada métrica presente, por nombre de campo.
+          additionalProperties: { $ref: '#/components/schemas/MetricSource' }
+        hasTrack: { type: boolean }
+        streamTypes:
+          type: array
+          items: { $ref: '#/components/schemas/StreamType' }
+        lapCount: { type: integer, minimum: 0 }
+        originalFile:
+          type: object
+          required: [format, sizeBytes, importedAt]
+          properties:
+            format: { type: string, enum: [FIT, GPX, TCX] }
+            sizeBytes: { type: integer, minimum: 1 }
+            importedAt: { type: string, format: date-time }
+    StreamType:
+      type: string
+      enum: [TIME, LATITUDE, LONGITUDE, ALTITUDE, DISTANCE, SPEED, HEART_RATE, CADENCE, POWER, TEMPERATURE]
+    ActivityStreams:
+      type: object
+      required: [sampleCount, streams]
+      properties:
+        sampleCount: { type: integer, minimum: 0 }
+        streams:
+          type: object
+          description: >
+            Una serie por tipo, todas de longitud sampleCount; null donde no hay dato. TIME en milisegundos desde
+            startedAt; unidades SI (m, m/s, °C) y grados WGS84.
+          additionalProperties:
+            type: array
+            items: { type: [number, 'null'] }
+    ActivityLap:
+      type: object
+      required: [lapNumber, startedAt, elapsedTimeSeconds, timerTimeSeconds, distanceMeters, averageSpeedMps,
+                 maxSpeedMps, averageHeartRateBpm, maxHeartRateBpm, averageCadenceRpm, averagePowerWatts, maxPowerWatts]
+      properties:
+        lapNumber: { type: integer, minimum: 1 }
+        startedAt: { type: [string, 'null'], format: date-time }
+        elapsedTimeSeconds: { type: [number, 'null'] }
+        timerTimeSeconds: { type: [number, 'null'] }
+        distanceMeters: { type: [number, 'null'] }
+        averageSpeedMps: { type: [number, 'null'] }
+        maxSpeedMps: { type: [number, 'null'] }
+        averageHeartRateBpm: { type: [integer, 'null'] }
+        maxHeartRateBpm: { type: [integer, 'null'] }
+        averageCadenceRpm: { type: [integer, 'null'] }
+        averagePowerWatts: { type: [integer, 'null'] }
+        maxPowerWatts: { type: [integer, 'null'] }
     ImportAccepted:
       type: object
       required: [jobId, status, statusUrl]
