@@ -26,6 +26,10 @@ final class PointCollector {
         points.add(point);
     }
 
+    int size() {
+        return points.size();
+    }
+
     List<TrackPoint> points() {
         return List.copyOf(points);
     }

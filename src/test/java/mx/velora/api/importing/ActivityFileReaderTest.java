@@ -7,6 +7,7 @@ import java.io.ByteArrayInputStream;
 import java.io.IOException;
 import java.util.List;
 import java.util.Objects;
+import mx.velora.api.importing.parsing.FitFixtures;
 import mx.velora.api.importing.parsing.GpxParser;
 import mx.velora.api.importing.parsing.ParserLimits;
 import org.junit.jupiter.api.Test;
@@ -37,10 +38,21 @@ class ActivityFileReaderTest {
     }
 
     @Test
-    void rejectsRecognizedFormatWithoutParserYet() {
-        var fit = new byte[] {14, 0x20, 0, 8, 0, 0, 0, 0, '.', 'F', 'I', 'T', 0, 0};
+    void readsFit() throws IOException {
+        var fit = FitFixtures.activity().record(0).record(1).build();
 
-        assertThatThrownBy(() -> reader.read(new ByteArrayInputStream(fit)))
+        var activity = reader.read(new ByteArrayInputStream(fit));
+
+        assertThat(activity.format()).isEqualTo(FileFormat.FIT);
+        assertThat(activity.points()).hasSize(2);
+    }
+
+    @Test
+    void rejectsRecognizedFormatWithoutRegisteredParser() {
+        var gpxOnly = new ActivityFileReader(List.of(new GpxParser(ParserLimits.DEFAULT)));
+        var fit = FitFixtures.activity().record(0).build();
+
+        assertThatThrownBy(() -> gpxOnly.read(new ByteArrayInputStream(fit)))
                 .isInstanceOfSatisfying(
                         ImportRejectedException.class,
                         e -> assertThat(e.reason()).isEqualTo(RejectionReason.UNSUPPORTED_FORMAT))
