@@ -10,9 +10,11 @@ import org.jspecify.annotations.Nullable;
  *
  * @param format formato detectado del archivo
  * @param parser parser y versión que la produjeron
- * @param sourceActivityKey clave estable de la actividad en su origen, si el formato la provee
+ * @param sourceActivityKey clave estable de la actividad en su origen, si el formato la provee (ADR-009)
  * @param title nombre de la actividad incluido en el archivo, si existe
- * @param startedAt instante UTC de la primera muestra con tiempo; {@code null} si el archivo no tiene tiempos
+ * @param startedAt instante UTC de la primera muestra con tiempo o, si no hay, el inicio declarado por el archivo;
+ *     {@code null} si el archivo no tiene tiempos
+ * @param laps vueltas reportadas por el dispositivo; vacía si el formato no las tiene
  * @param points muestras en el orden del archivo
  */
 public record ImportedActivity(
@@ -21,11 +23,13 @@ public record ImportedActivity(
         @Nullable String sourceActivityKey,
         @Nullable String title,
         @Nullable Instant startedAt,
+        List<ImportedLap> laps,
         List<TrackPoint> points) {
 
     public ImportedActivity {
         Objects.requireNonNull(format, "format");
         Objects.requireNonNull(parser, "parser");
+        laps = List.copyOf(laps);
         points = List.copyOf(points);
     }
 }

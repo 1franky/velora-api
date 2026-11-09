@@ -64,7 +64,7 @@ El módulo `importing` detecta el formato por contenido (no por extensión) y lo
 | Formato | Estado |
 |---|---|
 | GPX 1.0/1.1 | Soportado (parser StAX propio, con extensiones de sensores habituales) |
-| TCX | Detectado; parser pendiente |
+| TCX | Soportado (TrainingCenterDatabase v2: vueltas, sensores y extensiones ActivityExtension v2) |
 | FIT | Detectado; parser pendiente (Garmin FIT SDK, ADR-009) |
 
 El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen contenido del archivo. Los fixtures de `src/test/resources/fixtures/` son sintéticos.

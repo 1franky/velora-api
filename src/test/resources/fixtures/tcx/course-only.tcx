@@ -1,0 +1,19 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture sintético: solo un curso (ruta planificada), sin actividades registradas. -->
+<TrainingCenterDatabase xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2">
+  <Courses>
+    <Course>
+      <Name>Curso planificado</Name>
+      <Lap>
+        <TotalTimeSeconds>3600</TotalTimeSeconds>
+        <DistanceMeters>20000</DistanceMeters>
+      </Lap>
+      <Track>
+        <Trackpoint>
+          <Time>2026-11-10T08:00:00Z</Time>
+          <Position><LatitudeDegrees>10.0</LatitudeDegrees><LongitudeDegrees>10.0</LongitudeDegrees></Position>
+        </Trackpoint>
+      </Track>
+    </Course>
+  </Courses>
+</TrainingCenterDatabase>
