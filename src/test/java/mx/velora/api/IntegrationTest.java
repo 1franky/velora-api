@@ -15,7 +15,12 @@ import org.springframework.context.annotation.Import;
  */
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
-@SpringBootTest(properties = "velora.storage.originals-path=build/test-originals")
+@SpringBootTest(
+        properties = {
+            "velora.storage.originals-path=build/test-originals",
+            // Las pruebas ejecutan el worker a mano para controlar el momento.
+            "velora.import.worker.enabled=false"
+        })
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, WhoAmIController.class})
 public @interface IntegrationTest {}

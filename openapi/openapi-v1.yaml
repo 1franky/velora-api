@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.2.0
+  version: 1.3.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -230,6 +230,10 @@ paths:
   /activities/imports:
     post:
       summary: Importar actividad desde FIT, GPX o TCX
+      description: >
+        Guarda el archivo y crea un trabajo asíncrono. El formato se detecta por contenido, no por extensión.
+        Los duplicados no se rechazan aquí: el trabajo termina en estado DUPLICATE con la actividad existente.
+      operationId: importActivity
       requestBody:
         required: true
         content:
@@ -247,6 +251,9 @@ paths:
                 deviceId:
                   type: string
                   format: uuid
+                activityTitle:
+                  type: string
+                  maxLength: 200
       responses:
         '202':
           description: Importación aceptada
@@ -254,12 +261,18 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImportAccepted'
-        '400': { description: Archivo inválido }
-        '413': { description: Archivo demasiado grande }
-        '409': { description: Duplicado detectado }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '413':
+          description: Archivo demasiado grande
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
   /imports/{jobId}:
     get:
       summary: Consultar estado de importación
+      operationId: getImportJob
       parameters:
         - in: path
           name: jobId
@@ -272,6 +285,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ImportJob'
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /dashboard/summary:
     get:
       summary: Resumen del dashboard
@@ -472,11 +487,37 @@ components:
         statusUrl: { type: string }
     ImportJob:
       type: object
-      required: [jobId, status]
+      required: [jobId, status, warnings, possibleDuplicateActivityIds]
       properties:
         jobId: { type: string, format: uuid }
         status:
           type: string
           enum: [QUEUED, PROCESSING, COMPLETED, DUPLICATE, REJECTED, FAILED]
-        activityId: { type: [string, 'null'], format: uuid }
-        errorCode: { type: [string, 'null'] }
+        activityId:
+          type: [string, 'null']
+          format: uuid
+          description: Actividad creada (COMPLETED) o la ya existente (DUPLICATE).
+        errorCode:
+          type: [string, 'null']
+          description: >
+            Motivo de REJECTED (EMPTY_FILE, UNSUPPORTED_FORMAT, MALFORMED_FILE, FORBIDDEN_XML_CONSTRUCT,
+            TOO_MANY_POINTS, INVALID_DATA) o INTERNAL_ERROR en FAILED.
+        errorDetail:
+          type: [string, 'null']
+          description: Explicación en es-MX; nunca incluye contenido del archivo.
+        warnings:
+          type: array
+          description: Correcciones aplicadas al importar.
+          items:
+            type: object
+            required: [code, affectedCount]
+            properties:
+              code:
+                type: string
+                enum: [INVALID_COORDINATES, GPS_JUMPS, ALTITUDE_JUMPS, LONG_PAUSES, NEGATIVE_VALUES,
+                       NON_MONOTONIC_TIME, POSSIBLE_DUPLICATE]
+              affectedCount: { type: integer, minimum: 1 }
+        possibleDuplicateActivityIds:
+          type: array
+          description: Actividades parecidas (heurística o clave de origen débil); no se descartó nada.
+          items: { type: string, format: uuid }

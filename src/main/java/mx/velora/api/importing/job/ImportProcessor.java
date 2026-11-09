@@ -1,0 +1,248 @@
+package mx.velora.api.importing.job;
+
+import java.io.IOException;
+import java.io.OutputStream;
+import java.time.Clock;
+import java.time.Duration;
+import java.util.ArrayList;
+import java.util.LinkedHashSet;
+import java.util.List;
+import java.util.UUID;
+import java.util.stream.Collectors;
+import mx.velora.api.activity.ActivityLookup;
+import mx.velora.api.activity.ActivityRegistration;
+import mx.velora.api.activity.ActivityRegistration.DuplicateOriginalException;
+import mx.velora.api.activity.NewActivity;
+import mx.velora.api.catalog.CatalogLookup;
+import mx.velora.api.identity.UserTimeZones;
+import mx.velora.api.importing.ActivityFileReader;
+import mx.velora.api.importing.ActivityFootprint;
+import mx.velora.api.importing.BoundingBox;
+import mx.velora.api.importing.DerivedMetrics;
+import mx.velora.api.importing.ImportRejectedException;
+import mx.velora.api.importing.ImportedActivity;
+import mx.velora.api.importing.Measurement;
+import mx.velora.api.importing.MetricProvenance;
+import mx.velora.api.importing.ValidatedActivity;
+import mx.velora.api.importing.ValidationWarning;
+import mx.velora.api.importing.derive.DerivedMetricsCalculator;
+import mx.velora.api.importing.job.ImportJobRepository.ClaimedJob;
+import mx.velora.api.importing.parsing.ParserLimits;
+import mx.velora.api.importing.validation.ActivityValidator;
+import mx.velora.api.importing.validation.DuplicateHeuristic;
+import mx.velora.api.platform.storage.OriginalFileStore;
+import mx.velora.api.platform.storage.OriginalFileStore.StoredFile;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
+import org.springframework.stereotype.Component;
+
+/**
+ * Procesa un trabajo tomado de la cola: leer y verificar el original, parsear, validar, derivar, deduplicar y
+ * registrar. Es idempotente: si un intento anterior registró la actividad y cayó antes de marcar el trabajo, el
+ * reintento lo reconoce y lo completa.
+ *
+ * <p>Deduplicación (ADR-009): mismo archivo o misma clave FIT → {@code DUPLICATE}; clave TCX o heurística → solo
+ * advertencia {@code POSSIBLE_DUPLICATE}.
+ */
+@Component
+class ImportProcessor {
+
+    private static final Logger log = LoggerFactory.getLogger(ImportProcessor.class);
+
+    static final String POSSIBLE_DUPLICATE = "POSSIBLE_DUPLICATE";
+
+    private final ImportJobRepository jobs;
+    private final OriginalFileStore store;
+    private final ActivityRegistration registration;
+    private final ActivityLookup activities;
+    private final CatalogLookup catalog;
+    private final UserTimeZones timeZones;
+    private final ImportProperties properties;
+    private final Clock clock;
+    private final ActivityFileReader reader;
+    private final ActivityValidator validator;
+
+    ImportProcessor(
+            ImportJobRepository jobs,
+            OriginalFileStore store,
+            ActivityRegistration registration,
+            ActivityLookup activities,
+            CatalogLookup catalog,
+            UserTimeZones timeZones,
+            ImportProperties properties,
+            Clock clock) {
+        this.jobs = jobs;
+        this.store = store;
+        this.registration = registration;
+        this.activities = activities;
+        this.catalog = catalog;
+        this.timeZones = timeZones;
+        this.properties = properties;
+        this.clock = clock;
+        this.reader = ActivityFileReader.withDefaultParsers(new ParserLimits(properties.maxPoints()));
+        this.validator = new ActivityValidator(clock);
+    }
+
+    void process(ClaimedJob job) {
+        String format = null;
+        try {
+            var imported = read(job);
+            format = imported.format().name();
+            var validated = validator.validate(imported);
+            var derived = DerivedMetricsCalculator.compute(validated.activity(), DerivedMetrics.Parameters.DEFAULT);
+            handle(job, validated, derived, format);
+        } catch (ImportRejectedException e) {
+            jobs.reject(job.id(), e.reason().name(), ImportMessages.detail(e), clock.instant());
+            deleteOriginal(job);
+        } catch (RuntimeException | IOException e) {
+            onUnexpected(job, e);
+        }
+    }
+
+    private ImportedActivity read(ClaimedJob job) throws IOException {
+        try (var in = store.open(new StoredFile(job.storageKey(), job.sha256(), job.sizeBytes()))) {
+            // El detector de formato usa SequenceInputStream, que cierra cada stream al agotarlo; el cierre real
+            // lo hace este try.
+            var imported = reader.read(new java.io.FilterInputStream(in) {
+                @Override
+                public void close() {}
+            });
+            // El SHA-256 se verifica al llegar al final: leer lo que el parser no consumió.
+            in.transferTo(OutputStream.nullOutputStream());
+            return imported;
+        }
+    }
+
+    private void handle(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
+        var activity = validated.activity();
+        var possibleDuplicates = new LinkedHashSet<UUID>();
+        var sourceKey = activity.sourceActivityKey();
+        if (sourceKey != null) {
+            var sameKey = activities.withSourceKey(job.userId(), sourceKey);
+            if (sourceKey.startsWith("fit:") && !sameKey.isEmpty()) {
+                // file_id de FIT identifica la actividad del dispositivo: es la misma aunque el archivo cambie.
+                finishAsDuplicateOrOwn(job, sameKey.getFirst(), format, validated, possibleDuplicates);
+                return;
+            }
+            possibleDuplicates.addAll(sameKey);
+        }
+        possibleDuplicates.addAll(heuristicDuplicates(job.userId(), validated.footprint()));
+
+        try {
+            var id = registration.register(ActivityMapper.toNewActivity(validated, derived, context(job, activity)));
+            possibleDuplicates.remove(id);
+            jobs.complete(
+                    job.id(),
+                    id,
+                    format,
+                    warnings(validated, possibleDuplicates),
+                    List.copyOf(possibleDuplicates),
+                    clock.instant());
+        } catch (DuplicateOriginalException e) {
+            finishAsDuplicateOrOwn(job, e.existingActivityId(), format, validated, possibleDuplicates);
+        }
+    }
+
+    /** Si la actividad existente usa este mismo original, la registró un intento anterior: se completa. */
+    private void finishAsDuplicateOrOwn(
+            ClaimedJob job,
+            UUID existing,
+            String format,
+            ValidatedActivity validated,
+            java.util.Set<UUID> possibleDuplicates) {
+        if (activities.usesOriginal(existing, job.storageKey())) {
+            possibleDuplicates.remove(existing);
+            jobs.complete(
+                    job.id(),
+                    existing,
+                    format,
+                    warnings(validated, possibleDuplicates),
+                    List.copyOf(possibleDuplicates),
+                    clock.instant());
+            return;
+        }
+        jobs.duplicate(job.id(), existing, format, clock.instant());
+        deleteOriginal(job);
+    }
+
+    private List<UUID> heuristicDuplicates(UUID userId, ActivityFootprint footprint) {
+        var result = new ArrayList<UUID>();
+        for (var candidate : activities.startingNear(userId, footprint.startedAt(), Duration.ofMinutes(5))) {
+            var other = new ActivityFootprint(
+                    candidate.startedAt(),
+                    candidate.elapsedSeconds(),
+                    candidate.distanceMeters() == null
+                            ? null
+                            : new Measurement(candidate.distanceMeters(), MetricProvenance.DEVICE_REPORTED),
+                    candidate.bbox() == null
+                            ? null
+                            : new BoundingBox(
+                                    candidate.bbox()[0],
+                                    candidate.bbox()[1],
+                                    candidate.bbox()[2],
+                                    candidate.bbox()[3]),
+                    "stored");
+            if (DuplicateHeuristic.isLikelyDuplicate(footprint, other)) {
+                result.add(candidate.activityId());
+            }
+        }
+        return result;
+    }
+
+    private ActivityMapper.Context context(ClaimedJob job, ImportedActivity activity) {
+        var bikeType = job.bikeId() == null
+                ? null
+                : catalog.bikeType(job.userId(), job.bikeId()).orElse(null);
+        return new ActivityMapper.Context(
+                job.userId(),
+                job.bikeId(),
+                job.deviceId(),
+                bikeType,
+                job.activityTitle(),
+                timeZones.timeZoneOf(job.userId()),
+                new NewActivity.OriginalFile(
+                        job.storageKey(),
+                        job.sha256(),
+                        job.sizeBytes(),
+                        activity.parser().name(),
+                        activity.parser().version()));
+    }
+
+    private static String warnings(ValidatedActivity validated, java.util.Collection<UUID> possibleDuplicates) {
+        var items = new ArrayList<String>();
+        for (ValidationWarning w : validated.warnings()) {
+            items.add("{\"code\":\"" + w.code().name() + "\",\"affectedCount\":" + w.affectedCount() + "}");
+        }
+        if (!possibleDuplicates.isEmpty()) {
+            items.add("{\"code\":\"" + POSSIBLE_DUPLICATE + "\",\"affectedCount\":" + possibleDuplicates.size() + "}");
+        }
+        return items.stream().collect(Collectors.joining(",", "[", "]"));
+    }
+
+    private void onUnexpected(ClaimedJob job, Exception e) {
+        var now = clock.instant();
+        if (job.attemptCount() < job.maxAttempts()) {
+            var delay = properties.retryBaseDelay().multipliedBy(1L << Math.min(job.attemptCount() - 1, 10));
+            log.warn(
+                    "Importación {} falló en el intento {} de {}; se reintentará en {}",
+                    job.id(),
+                    job.attemptCount(),
+                    job.maxAttempts(),
+                    delay,
+                    e);
+            jobs.retryLater(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now.plus(delay), now);
+        } else {
+            log.error("Importación {} falló definitivamente tras {} intentos", job.id(), job.attemptCount(), e);
+            // El original se conserva para diagnóstico o reintento manual.
+            jobs.fail(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now);
+        }
+    }
+
+    private void deleteOriginal(ClaimedJob job) {
+        try {
+            store.delete(job.storageKey());
+        } catch (IOException e) {
+            log.warn("No se pudo borrar el original del trabajo {}", job.id(), e);
+        }
+    }
+}

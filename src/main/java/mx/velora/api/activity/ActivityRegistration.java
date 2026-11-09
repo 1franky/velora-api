@@ -5,6 +5,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.UUID;
 import mx.velora.api.activity.persistence.ActivityWriter;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.stereotype.Service;
 import org.springframework.transaction.annotation.Transactional;
 
@@ -22,10 +23,12 @@ public class ActivityRegistration {
 
     private final ActivityWriter writer;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    ActivityRegistration(ActivityWriter writer, Clock clock) {
+    ActivityRegistration(ActivityWriter writer, Clock clock, ApplicationEventPublisher events) {
         this.writer = writer;
         this.clock = clock;
+        this.events = events;
     }
 
     /**
@@ -54,6 +57,7 @@ public class ActivityRegistration {
         writer.insertLaps(id, cmd.laps());
         writer.insertStreams(id, cmd.samples());
         writer.insertFile(id, cmd, now);
+        events.publishEvent(new ActivityImported(id, cmd.userId(), cmd.startedAt()));
         return id;
     }
 
