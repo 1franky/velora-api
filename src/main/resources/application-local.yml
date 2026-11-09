@@ -1,0 +1,4 @@
+# Perfil de desarrollo local. Los valores sensibles llegan por variables de entorno (`.env`).
+logging:
+  level:
+    mx.velora: DEBUG

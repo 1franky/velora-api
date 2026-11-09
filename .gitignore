@@ -29,3 +29,14 @@ uploads/
 !src/test/resources/fixtures/**
 
 .DS_Store
+
+# Eclipse / STS
+.apt_generated
+.classpath
+.factorypath
+.project
+.settings
+bin/
+!**/src/main/**/bin/
+!**/src/test/**/bin/
+HELP.md
