@@ -16,6 +16,7 @@ import org.jspecify.annotations.Nullable;
  *     {@code null} si el archivo no tiene tiempos
  * @param laps vueltas reportadas por el dispositivo; vacía si el formato no las tiene
  * @param points muestras en el orden del archivo
+ * @param reported totales informados por el dispositivo; {@link ReportedSummary#EMPTY} si el formato no los tiene
  */
 public record ImportedActivity(
         FileFormat format,
@@ -24,12 +25,14 @@ public record ImportedActivity(
         @Nullable String title,
         @Nullable Instant startedAt,
         List<ImportedLap> laps,
-        List<TrackPoint> points) {
+        List<TrackPoint> points,
+        ReportedSummary reported) {
 
     public ImportedActivity {
         Objects.requireNonNull(format, "format");
         Objects.requireNonNull(parser, "parser");
         laps = List.copyOf(laps);
         points = List.copyOf(points);
+        Objects.requireNonNull(reported, "reported");
     }
 }

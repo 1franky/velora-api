@@ -11,6 +11,7 @@ import com.garmin.fit.Fit;
 import com.garmin.fit.LapMesg;
 import com.garmin.fit.Mesg;
 import com.garmin.fit.RecordMesg;
+import com.garmin.fit.SessionMesg;
 import java.time.Instant;
 import java.util.ArrayList;
 import java.util.List;
@@ -83,6 +84,13 @@ public final class FitFixtures {
             var lap = new LapMesg();
             fields.accept(lap);
             mesgs.add(lap);
+            return this;
+        }
+
+        public Builder session(Consumer<SessionMesg> fields) {
+            var session = new SessionMesg();
+            fields.accept(session);
+            mesgs.add(session);
             return this;
         }
 

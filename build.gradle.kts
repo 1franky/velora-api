@@ -67,7 +67,7 @@ spotless {
 
 tasks.test {
     useJUnitPlatform {
-        excludeTags("benchmark")
+        excludeTags("benchmark", "local-data")
     }
 }
 
@@ -115,4 +115,21 @@ tasks.register<org.springframework.boot.gradle.tasks.run.BootRun>("bootstrapOwne
     classpath = bootRun.classpath
     args("--velora.bootstrap-owner", "--spring.main.web-application-type=none")
     loadDotEnv()
+}
+
+// Análisis de archivos reales del usuario, solo en local: ./gradlew analyzeLocalFiles -PlocalFiles=/ruta.
+// Nunca versionar esos archivos ni el reporte (build/local-data/).
+tasks.register<Test>("analyzeLocalFiles") {
+    group = "verification"
+    description = "Calibra parsers y métricas derivadas con archivos reales locales (sin imprimir coordenadas)."
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("local-data")
+    }
+    systemProperty("velora.localFiles", (project.findProperty("localFiles") ?: "").toString())
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+    }
 }

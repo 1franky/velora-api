@@ -15,6 +15,13 @@ public record ValidationWarning(Code code, int affectedCount) {
         INVALID_COORDINATES,
         /** Saltos de GPS físicamente imposibles: se eliminó la posición del punto atípico. */
         GPS_JUMPS,
+        /** Saltos de altitud físicamente imposibles: se eliminó la altitud del punto atípico. */
+        ALTITUDE_JUMPS,
+        /**
+         * Pausas de {@code 6 h} o más dentro de la actividad (p. ej. "reanudar más tarde"): se conservan, pero el
+         * tiempo transcurrido y la deduplicación heurística pueden no ser representativos.
+         */
+        LONG_PAUSES,
         /** Distancias, velocidades o tiempos negativos: el valor quedó en {@code null}. */
         NEGATIVE_VALUES,
         /** Marcas de tiempo que retroceden respecto a la muestra anterior: se conservan tal cual. */

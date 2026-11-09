@@ -8,6 +8,7 @@ import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.Measurement;
 import mx.velora.api.importing.MetricProvenance;
 import mx.velora.api.importing.TrackPoint;
+import mx.velora.api.importing.derive.Geo;
 import org.jspecify.annotations.Nullable;
 
 /**

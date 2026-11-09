@@ -186,4 +186,17 @@ class TcxParserTest {
     private static ByteArrayInputStream stream(String xml) {
         return new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
     }
+
+    @Test
+    void summarizesLapsAsDeviceReportedTotals() {
+        var reported = parse("with-laps.tcx").reported();
+
+        assertThat(reported.sport()).isEqualTo("Biking");
+        assertThat(reported.timerTimeSeconds()).isEqualTo(900.5);
+        assertThat(reported.distanceMeters()).isEqualTo(5_500.0);
+        assertThat(reported.maxSpeedMps()).isEqualTo(12.5);
+        assertThat(reported.maxHeartRateBpm()).isEqualTo(152);
+        assertThat(reported.maxPowerWatts()).isEqualTo(410);
+        assertThat(reported.ascentMeters()).as("TCX no informa desnivel").isNull();
+    }
 }

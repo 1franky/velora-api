@@ -180,4 +180,10 @@ class GpxParserTest {
     private static ByteArrayInputStream stream(String xml) {
         return new ByteArrayInputStream(xml.getBytes(StandardCharsets.UTF_8));
     }
+
+    @Test
+    void gpxHasNoDeviceSummary() {
+        assertThat(parse("with-time-and-sensors.gpx").reported())
+                .isEqualTo(mx.velora.api.importing.ReportedSummary.EMPTY);
+    }
 }

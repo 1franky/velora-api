@@ -8,6 +8,8 @@ import static org.assertj.core.api.Assertions.within;
 
 import com.garmin.fit.DateTime;
 import com.garmin.fit.File;
+import com.garmin.fit.Sport;
+import com.garmin.fit.SubSport;
 import java.io.ByteArrayInputStream;
 import java.time.Instant;
 import java.util.Arrays;
@@ -250,5 +252,44 @@ class FitParserTest {
         var fit = FitFixtures.activity().record(0).build();
 
         assertThat(parse(fit).points().getFirst().time()).isEqualTo(Instant.parse("2026-11-08T13:15:00Z"));
+    }
+
+    @Test
+    void readsSessionTotalsAsDeviceReportedSummary() {
+        var fit = FitFixtures.activity()
+                .record(0)
+                .session(s -> {
+                    s.setSport(Sport.CYCLING);
+                    s.setSubSport(SubSport.MOUNTAIN);
+                    s.setTotalElapsedTime(3_700f);
+                    s.setTotalTimerTime(3_600f);
+                    s.setTotalDistance(25_000f);
+                    s.setTotalAscent(640);
+                    s.setTotalDescent(630);
+                    s.setEnhancedMaxSpeed(15.5f);
+                    s.setAvgHeartRate((short) 142);
+                    s.setAvgPower(190);
+                })
+                .build();
+
+        var reported = parse(fit).reported();
+
+        assertThat(reported.sport()).isEqualTo("CYCLING");
+        assertThat(reported.subSport()).isEqualTo("MOUNTAIN");
+        assertThat(reported.elapsedTimeSeconds()).isCloseTo(3_700, within(0.01));
+        assertThat(reported.timerTimeSeconds()).isCloseTo(3_600, within(0.01));
+        assertThat(reported.distanceMeters()).isCloseTo(25_000, within(0.01));
+        assertThat(reported.ascentMeters()).isEqualTo(640.0);
+        assertThat(reported.descentMeters()).isEqualTo(630.0);
+        assertThat(reported.maxSpeedMps()).isCloseTo(15.5, within(0.001));
+        assertThat(reported.averageHeartRateBpm()).isEqualTo(142);
+        assertThat(reported.averagePowerWatts()).isEqualTo(190);
+        assertThat(reported.averageCadenceRpm()).as("ausente permanece null").isNull();
+    }
+
+    @Test
+    void fileWithoutSessionHasEmptySummary() {
+        assertThat(parse(FitFixtures.activity().record(0).build()).reported())
+                .isEqualTo(mx.velora.api.importing.ReportedSummary.EMPTY);
     }
 }

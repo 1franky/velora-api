@@ -168,4 +168,41 @@ class ActivityValidatorTest {
                         ImportRejectedException.class,
                         e -> assertThat(e.reason()).isEqualTo(RejectionReason.INVALID_DATA));
     }
+
+    @Test
+    void warnsAboutLongPausesButKeepsThePoints() {
+        var points = List.of(moving(0, 0, 5), moving(0, 10, 5), moving(1, 10 + 6 * 3_600, 0));
+
+        var result = validator.validate(Activities.of(points));
+
+        assertThat(result.warnings()).containsExactly(new ValidationWarning(Code.LONG_PAUSES, 1));
+        assertThat(result.activity().points()).hasSize(3);
+    }
+
+    @Test
+    void removesImpossibleAltitudesAtTheStart() {
+        var points = new ArrayList<TrackPoint>();
+        for (int t = 0; t < 20; t++) {
+            var p = moving(0, t, 5);
+            points.add(new TrackPoint(
+                    0,
+                    p.time(),
+                    p.latitude(),
+                    p.longitude(),
+                    t < 3 ? 0.0 : 1_500.0 + t * 0.1,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null,
+                    null));
+        }
+
+        var result = validator.validate(Activities.of(points));
+
+        assertThat(result.warnings()).containsExactly(new ValidationWarning(Code.ALTITUDE_JUMPS, 3));
+        assertThat(result.activity().points().subList(0, 3))
+                .allSatisfy(p -> assertThat(p.altitudeMeters()).isNull());
+        assertThat(result.activity().points().get(3).altitudeMeters()).isNotNull();
+    }
 }
