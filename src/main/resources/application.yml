@@ -18,6 +18,10 @@ spring:
           time_zone: UTC
   flyway:
     locations: classpath:db/migration
+  jackson:
+    deserialization:
+      # El contrato declara additionalProperties: false en los cuerpos de solicitud.
+      fail-on-unknown-properties: true
   mvc:
     problemdetails:
       enabled: true

@@ -3,6 +3,7 @@ package mx.velora.api.identity.user;
 import java.time.Instant;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -24,6 +25,50 @@ public class UserRepository {
                 .param("email", email)
                 .query((rs, row) -> new Credentials(rs.getObject("id", UUID.class), rs.getString("password_hash")))
                 .optional();
+    }
+
+    /** Perfil y preferencias. */
+    public record Profile(
+            UUID id, String email, String locale, String timeZone, String distanceUnit, String elevationUnit) {}
+
+    public Optional<Profile> findProfile(UUID id) {
+        return jdbc.sql("""
+                        SELECT id, email, locale, time_zone, distance_unit, elevation_unit
+                        FROM users WHERE id = :id
+                        """)
+                .param("id", id)
+                .query((rs, row) -> new Profile(
+                        rs.getObject("id", UUID.class),
+                        rs.getString("email"),
+                        rs.getString("locale"),
+                        rs.getString("time_zone"),
+                        rs.getString("distance_unit"),
+                        rs.getString("elevation_unit")))
+                .optional();
+    }
+
+    /** Actualiza solo los valores no nulos. Devuelve {@code false} si el usuario no existe. */
+    public boolean updatePreferences(
+            UUID id,
+            @Nullable String timeZone,
+            @Nullable String distanceUnit,
+            @Nullable String elevationUnit,
+            Instant now) {
+        return jdbc.sql("""
+                                UPDATE users SET
+                                    time_zone = coalesce(:timeZone, time_zone),
+                                    distance_unit = coalesce(:distanceUnit, distance_unit),
+                                    elevation_unit = coalesce(:elevationUnit, elevation_unit),
+                                    updated_at = :now
+                                WHERE id = :id
+                                """)
+                        .param("timeZone", timeZone, java.sql.Types.VARCHAR)
+                        .param("distanceUnit", distanceUnit, java.sql.Types.VARCHAR)
+                        .param("elevationUnit", elevationUnit, java.sql.Types.VARCHAR)
+                        .param("now", java.sql.Timestamp.from(now))
+                        .param("id", id)
+                        .update()
+                == 1;
     }
 
     public boolean anyUserExists() {
