@@ -40,6 +40,8 @@ dependencies {
     testImplementation("org.springframework.boot:spring-boot-starter-webmvc-test")
     testImplementation("org.springframework.boot:spring-boot-testcontainers")
     testImplementation("org.springframework.modulith:spring-modulith-starter-test")
+    // Validación de respuestas y solicitudes contra openapi/openapi-v1.yaml (Apache-2.0).
+    testImplementation("com.atlassian.oai:swagger-request-validator-mockmvc:3.0.0")
     testImplementation("org.testcontainers:testcontainers-junit-jupiter")
     testImplementation("org.testcontainers:testcontainers-postgresql")
     testRuntimeOnly("org.junit.platform:junit-platform-launcher")
