@@ -99,6 +99,10 @@ Un worker dentro de la API procesa la cola (`import_jobs`, `FOR UPDATE SKIP LOCK
 
 ## Actividades
 
+`POST /api/v1/activities/{id}/reprocess` recalcula una actividad desde su original en la misma cola (trabajo `REPROCESS`): no crea actividades ni toca el original, conserva título, bicicleta, dispositivo y zona horaria, y guarda las métricas anteriores en `activity_metrics_history` para compararlas.
+
+Criterio de salida de la Fase 2 (`HundredActivitiesExitCriterionTest`, parte del build): 100 actividades FIT de 30 min a 1 Hz se suben, procesan y consultan por la API en ~12 s.
+
 Consulta: `GET /api/v1/activities` (de la más reciente a la más antigua; filtros `from`/`to` por fecha deportiva local, `bikeId`, `subType`, `minDistanceM`/`maxDistanceM`; paginación con `cursor` opaco y `limit` ≤ 100), `GET /activities/{id}` (con procedencia de cada métrica), `/streams?types=…` y `/laps`. `DELETE /activities/{id}` borra todo lo derivado y, tras confirmar la transacción, el archivo original; el mismo archivo puede volver a importarse.
 
 El módulo `activity` registra actividades validadas en una sola transacción (ADR-012): `activities` con valores efectivos (prefieren el dato del dispositivo), `activity_metrics` con métricas del dispositivo y derivadas por separado, `activity_tracks` (`MultiLineString`, un tramo por segmento), vueltas, streams en `bytea` con el códec `velora-streams/1` y la referencia al archivo original.

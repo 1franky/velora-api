@@ -245,6 +245,100 @@ public class ActivityWriter {
                 .update();
     }
 
+    /** Original y referencias de una actividad del usuario, para reprocesarla. */
+    public record OriginalRef(
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            @Nullable UUID bikeId,
+            String parserVersion) {}
+
+    public Optional<OriginalRef> originalOf(UUID userId, UUID activityId) {
+        return jdbc.sql("""
+                        SELECT f.storage_key, f.sha256, f.file_size_bytes, a.bike_id, f.parser_version
+                        FROM activities a JOIN activity_files f ON f.activity_id = a.id
+                        WHERE a.user_id = :user AND a.id = :id
+                        """)
+                .param("user", userId)
+                .param("id", activityId)
+                .query((rs, n) -> new OriginalRef(
+                        rs.getString("storage_key"),
+                        rs.getBytes("sha256"),
+                        rs.getLong("file_size_bytes"),
+                        rs.getObject("bike_id", UUID.class),
+                        rs.getString("parser_version")))
+                .optional();
+    }
+
+    /** Bloquea la actividad para el reemplazo; vacío si ya no existe. Devuelve la zona horaria de importación. */
+    public Optional<String> lockForReprocess(UUID activityId) {
+        return jdbc.sql("SELECT time_zone_at_import FROM activities WHERE id = :id FOR UPDATE")
+                .param("id", activityId)
+                .query(String.class)
+                .optional();
+    }
+
+    /** Copia las métricas vigentes al historial y elimina todo lo derivado del original. */
+    public void archiveAndClearDerived(UUID activityId, String previousParserVersion, Instant now) {
+        jdbc.sql("""
+                        INSERT INTO activity_metrics_history
+                            (activity_id, metric, source, value, algorithm_version, parameters, parser_version, superseded_at)
+                        SELECT activity_id, metric, source, value, algorithm_version, parameters, :parser, :now
+                        FROM activity_metrics WHERE activity_id = :id
+                        """)
+                .param("parser", previousParserVersion)
+                .param("now", Timestamp.from(now))
+                .param("id", activityId)
+                .update();
+        for (var table : List.of("activity_metrics", "activity_tracks", "activity_laps", "activity_streams")) {
+            jdbc.sql("DELETE FROM " + table + " WHERE activity_id = :id")
+                    .param("id", activityId)
+                    .update();
+        }
+    }
+
+    /** Actualiza los datos recalculados; conserva título, bici, dispositivo y zona horaria de importación. */
+    public void updateRecalculated(
+            UUID activityId, NewActivity cmd, LocalDate localStartDate, Effective effective, Instant now) {
+        var v = effective.values();
+        jdbc.sql("""
+                        UPDATE activities SET
+                            sub_type = :subType, started_at = :startedAt, local_start_date = :localDate,
+                            source_activity_key = :sourceKey,
+                            elapsed_time_seconds = :elapsed, moving_time_seconds = :moving, distance_meters = :distance,
+                            elevation_gain_meters = :gain, elevation_loss_meters = :loss, average_speed_mps = :avgSpeed,
+                            max_speed_mps = :maxSpeed, average_heart_rate_bpm = :avgHr, max_heart_rate_bpm = :maxHr,
+                            average_power_watts = :avgPower, max_power_watts = :maxPower, average_cadence_rpm = :avgCadence,
+                            metrics_provenance = CAST(:provenance AS jsonb), updated_at = :now
+                        WHERE id = :id
+                        """)
+                .param("subType", cmd.subType().name())
+                .param("startedAt", Timestamp.from(cmd.startedAt()))
+                .param("localDate", localStartDate)
+                .param("sourceKey", cmd.sourceActivityKey(), Types.VARCHAR)
+                .param("elapsed", decimal(v.get(Metric.ELAPSED_TIME)), Types.NUMERIC)
+                .param("moving", decimal(v.get(Metric.MOVING_TIME)), Types.NUMERIC)
+                .param("distance", decimal(v.get(Metric.DISTANCE)), Types.NUMERIC)
+                .param("gain", decimal(v.get(Metric.ELEVATION_GAIN)), Types.NUMERIC)
+                .param("loss", decimal(v.get(Metric.ELEVATION_LOSS)), Types.NUMERIC)
+                .param("avgSpeed", decimal(v.get(Metric.AVERAGE_SPEED)), Types.NUMERIC)
+                .param("maxSpeed", decimal(v.get(Metric.MAX_SPEED)), Types.NUMERIC)
+                .param("avgHr", integer(v.get(Metric.AVERAGE_HEART_RATE)), Types.INTEGER)
+                .param("maxHr", integer(v.get(Metric.MAX_HEART_RATE)), Types.INTEGER)
+                .param("avgPower", integer(v.get(Metric.AVERAGE_POWER)), Types.INTEGER)
+                .param("maxPower", integer(v.get(Metric.MAX_POWER)), Types.INTEGER)
+                .param("avgCadence", integer(v.get(Metric.AVERAGE_CADENCE)), Types.INTEGER)
+                .param("provenance", provenanceJson(effective.provenance()))
+                .param("now", Timestamp.from(now))
+                .param("id", activityId)
+                .update();
+        jdbc.sql("UPDATE activity_files SET parser_name = :name, parser_version = :version WHERE activity_id = :id")
+                .param("name", cmd.file().parserName())
+                .param("version", cmd.file().parserVersion())
+                .param("id", activityId)
+                .update();
+    }
+
     private static @Nullable BigDecimal decimal(@Nullable Double value) {
         return value == null ? null : BigDecimal.valueOf(value);
     }

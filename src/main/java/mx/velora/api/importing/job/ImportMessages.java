@@ -11,6 +11,8 @@ final class ImportMessages {
     static final String INTERNAL_ERROR =
             "No fue posible procesar el archivo por un error interno. Puedes intentar importarlo de nuevo.";
 
+    static final String ACTIVITY_GONE = "La actividad ya no existe; no hay nada que reprocesar.";
+
     private ImportMessages() {}
 
     /** "MOTIVO: detalle en minúsculas" → "Detalle en minúsculas." */

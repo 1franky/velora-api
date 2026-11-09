@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.4.0
+  version: 1.5.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -265,6 +265,27 @@ paths:
       operationId: deleteActivity
       responses:
         '204': { description: Actividad borrada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/reprocess:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    post:
+      summary: Recalcular una actividad desde su archivo original
+      description: >
+        Asíncrono e idempotente: no crea actividades ni modifica el original; conserva título, bicicleta,
+        dispositivo y zona horaria de importación, y guarda las métricas anteriores para compararlas. Si ya hay un
+        reproceso pendiente, devuelve ese trabajo.
+      operationId: reprocessActivity
+      responses:
+        '202':
+          description: Reproceso en cola
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportAccepted' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /activities/{activityId}/streams:
@@ -665,9 +686,12 @@ components:
         statusUrl: { type: string }
     ImportJob:
       type: object
-      required: [jobId, status, warnings, possibleDuplicateActivityIds]
+      required: [jobId, kind, status, warnings, possibleDuplicateActivityIds]
       properties:
         jobId: { type: string, format: uuid }
+        kind:
+          type: string
+          enum: [IMPORT, REPROCESS]
         status:
           type: string
           enum: [QUEUED, PROCESSING, COMPLETED, DUPLICATE, REJECTED, FAILED]
@@ -679,7 +703,8 @@ components:
           type: [string, 'null']
           description: >
             Motivo de REJECTED (EMPTY_FILE, UNSUPPORTED_FORMAT, MALFORMED_FILE, FORBIDDEN_XML_CONSTRUCT,
-            TOO_MANY_POINTS, INVALID_DATA) o INTERNAL_ERROR en FAILED.
+            TOO_MANY_POINTS, INVALID_DATA) o, en FAILED, INTERNAL_ERROR o ACTIVITY_NOT_FOUND (reproceso de una
+            actividad borrada).
         errorDetail:
           type: [string, 'null']
           description: Explicación en es-MX; nunca incluye contenido del archivo.

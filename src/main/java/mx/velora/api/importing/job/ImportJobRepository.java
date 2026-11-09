@@ -30,11 +30,19 @@ public class ImportJobRepository {
             @Nullable UUID deviceId,
             @Nullable String activityTitle,
             int attemptCount,
-            int maxAttempts) {}
+            int maxAttempts,
+            String kind,
+            @Nullable UUID activityId) {
+
+        public boolean isReprocess() {
+            return "REPROCESS".equals(kind);
+        }
+    }
 
     /** Estado visible para el usuario (contrato {@code ImportJob}). */
     public record JobView(
             UUID id,
+            String kind,
             String status,
             @Nullable UUID activityId,
             @Nullable String errorCode,
@@ -82,6 +90,49 @@ public class ImportJobRepository {
                 .update();
     }
 
+    /** Reproceso pendiente (en cola o en proceso) de una actividad, si existe. */
+    public Optional<UUID> pendingReprocess(UUID userId, UUID activityId) {
+        return jdbc.sql("""
+                        SELECT id FROM import_jobs
+                        WHERE user_id = :user AND activity_id = :activity AND kind = 'REPROCESS'
+                          AND status IN ('QUEUED', 'PROCESSING')
+                        """)
+                .param("user", userId)
+                .param("activity", activityId)
+                .query(UUID.class)
+                .optional();
+    }
+
+    public void insertReprocess(
+            UUID id,
+            UUID userId,
+            UUID activityId,
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            @Nullable UUID bikeId,
+            int maxAttempts,
+            Instant now) {
+        jdbc.sql("""
+                        INSERT INTO import_jobs (
+                            id, user_id, kind, status, stage, file_name, storage_key, sha256, file_size_bytes,
+                            bike_id, activity_id, max_attempts, next_attempt_at, created_at, updated_at)
+                        VALUES (
+                            :id, :user, 'REPROCESS', 'QUEUED', 'STORED', 'reprocesamiento', :key, :sha, :size,
+                            :bike, :activity, :maxAttempts, :now, :now, :now)
+                        """)
+                .param("id", id)
+                .param("user", userId)
+                .param("key", storageKey)
+                .param("sha", sha256)
+                .param("size", sizeBytes)
+                .param("bike", bikeId, Types.OTHER)
+                .param("activity", activityId)
+                .param("maxAttempts", maxAttempts)
+                .param("now", Timestamp.from(now))
+                .update();
+    }
+
     /**
      * Toma hasta {@code batch} trabajos listos, o en proceso con el bloqueo vencido (p. ej. tras un reinicio), sin
      * esperar a los que otro worker ya tiene ({@code FOR UPDATE SKIP LOCKED}).
@@ -99,7 +150,7 @@ public class ImportJobRepository {
                             LIMIT :batch
                             FOR UPDATE SKIP LOCKED)
                         RETURNING j.id, j.user_id, j.storage_key, j.sha256, j.file_size_bytes, j.bike_id, j.device_id,
-                                  j.activity_title, j.attempt_count, j.max_attempts
+                                  j.activity_title, j.attempt_count, j.max_attempts, j.kind, j.activity_id
                         """)
                 .param("lockedUntil", Timestamp.from(now.plus(lockDuration)))
                 .param("now", Timestamp.from(now))
@@ -114,7 +165,9 @@ public class ImportJobRepository {
                         rs.getObject("device_id", UUID.class),
                         rs.getString("activity_title"),
                         rs.getInt("attempt_count"),
-                        rs.getInt("max_attempts")))
+                        rs.getInt("max_attempts"),
+                        rs.getString("kind"),
+                        rs.getObject("activity_id", UUID.class)))
                 .list();
     }
 
@@ -206,7 +259,7 @@ public class ImportJobRepository {
 
     public Optional<JobView> find(UUID userId, UUID jobId) {
         return jdbc.sql("""
-                        SELECT id, status, activity_id, error_code, error_detail_safe, warnings::text AS warnings,
+                        SELECT id, kind, status, activity_id, error_code, error_detail_safe, warnings::text AS warnings,
                                possible_duplicate_ids
                         FROM import_jobs WHERE id = :id AND user_id = :user
                         """)
@@ -221,6 +274,7 @@ public class ImportJobRepository {
         var duplicates = ids == null ? List.<UUID>of() : Arrays.asList((UUID[]) ids.getArray());
         return new JobView(
                 rs.getObject("id", UUID.class),
+                rs.getString("kind"),
                 rs.getString("status"),
                 rs.getObject("activity_id", UUID.class),
                 rs.getString("error_code"),
