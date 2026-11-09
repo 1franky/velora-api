@@ -4,6 +4,7 @@ import java.util.ArrayList;
 import java.util.BitSet;
 import java.util.List;
 import mx.velora.api.importing.TrackPoint;
+import mx.velora.api.importing.derive.Geo;
 
 /**
  * Detecta posiciones atípicas por velocidad implícita imposible para una bicicleta.

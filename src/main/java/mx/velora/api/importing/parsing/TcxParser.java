@@ -15,6 +15,7 @@ import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.ImportedLap;
 import mx.velora.api.importing.ParserInfo;
 import mx.velora.api.importing.RejectionReason;
+import mx.velora.api.importing.ReportedSummary;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -67,6 +68,7 @@ public final class TcxParser implements ActivityFileParser {
         private int activityCount;
         private @Nullable String activityId;
         private @Nullable String unitId;
+        private @Nullable String sport;
         private int segment = -1;
         private @Nullable LapBuilder lap;
         private @Nullable TrackPointBuilder point;
@@ -97,7 +99,8 @@ public final class TcxParser implements ActivityFileParser {
             if (startedAt == null && !laps.isEmpty()) {
                 startedAt = laps.getFirst().startedAt();
             }
-            return new ImportedActivity(FileFormat.TCX, INFO, sourceKey(), null, startedAt, laps, points.points());
+            return new ImportedActivity(
+                    FileFormat.TCX, INFO, sourceKey(), null, startedAt, laps, points.points(), summarizeLaps());
         }
 
         private void startContainer(String name) {
@@ -107,6 +110,8 @@ public final class TcxParser implements ActivityFileParser {
             }
             switch (name) {
                 case "Activity" -> {
+                    sport = blankToNull(
+                            java.util.Objects.requireNonNullElse(reader.getAttributeValue(null, "Sport"), ""));
                     if (++activityCount > 1) {
                         throw new ImportRejectedException(
                                 RejectionReason.UNSUPPORTED_FORMAT,
@@ -217,6 +222,55 @@ public final class TcxParser implements ActivityFileParser {
 
         private String text() throws XMLStreamException {
             return reader.getElementText();
+        }
+
+        /**
+         * TCX no tiene resumen de actividad: se agregan las vueltas. Tiempo y distancia se suman solo si todas las
+         * vueltas los informan; los máximos se toman de las vueltas que los tengan.
+         */
+        private ReportedSummary summarizeLaps() {
+            if (laps.isEmpty()) {
+                return new ReportedSummary(
+                        sport, null, null, null, null, null, null, null, null, null, null, null, null, null);
+            }
+            return new ReportedSummary(
+                    sport,
+                    null,
+                    null,
+                    sumIfAll(laps.stream().map(ImportedLap::timerTimeSeconds).toList()),
+                    sumIfAll(laps.stream().map(ImportedLap::distanceMeters).toList()),
+                    null,
+                    null,
+                    null,
+                    laps.stream()
+                            .map(ImportedLap::maxSpeedMps)
+                            .filter(java.util.Objects::nonNull)
+                            .max(Double::compare)
+                            .orElse(null),
+                    null,
+                    laps.stream()
+                            .map(ImportedLap::maxHeartRateBpm)
+                            .filter(java.util.Objects::nonNull)
+                            .max(Integer::compare)
+                            .orElse(null),
+                    null,
+                    null,
+                    laps.stream()
+                            .map(ImportedLap::maxPowerWatts)
+                            .filter(java.util.Objects::nonNull)
+                            .max(Integer::compare)
+                            .orElse(null));
+        }
+
+        private static @Nullable Double sumIfAll(List<@Nullable Double> values) {
+            double total = 0;
+            for (var value : values) {
+                if (value == null) {
+                    return null;
+                }
+                total += value;
+            }
+            return total;
         }
 
         private @Nullable String sourceKey() {

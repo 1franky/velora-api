@@ -15,6 +15,8 @@ import com.garmin.fit.LapMesgListener;
 import com.garmin.fit.MesgBroadcaster;
 import com.garmin.fit.RecordMesg;
 import com.garmin.fit.RecordMesgListener;
+import com.garmin.fit.SessionMesg;
+import com.garmin.fit.SessionMesgListener;
 import java.io.InputStream;
 import java.time.Instant;
 import java.util.ArrayList;
@@ -25,6 +27,7 @@ import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.ImportedLap;
 import mx.velora.api.importing.ParserInfo;
 import mx.velora.api.importing.RejectionReason;
+import mx.velora.api.importing.ReportedSummary;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -62,6 +65,7 @@ public final class FitParser implements ActivityFileParser {
         broadcaster.addListener((EventMesgListener) session::onEvent);
         broadcaster.addListener((RecordMesgListener) session::onRecord);
         broadcaster.addListener((LapMesgListener) session::onLap);
+        broadcaster.addListener((SessionMesgListener) session::onSession);
         boolean completed;
         try {
             completed = decode.read(content, broadcaster, broadcaster);
@@ -107,6 +111,8 @@ public final class FitParser implements ActivityFileParser {
         private @Nullable String sourceKey;
         private int segment;
         private boolean timerStopped;
+        private ReportedSummary reported = ReportedSummary.EMPTY;
+        private boolean sessionSeen;
 
         private Session(ParserLimits limits) {
             this.points = new PointCollector(limits);
@@ -179,6 +185,30 @@ public final class FitParser implements ActivityFileParser {
                     toInteger(mesg.getMaxPower())));
         }
 
+        /** Totales del dispositivo. Archivos multideporte: solo se usa la primera sesión. */
+        private void onSession(SessionMesg mesg) {
+            requireFileId();
+            if (sessionSeen) {
+                return;
+            }
+            sessionSeen = true;
+            reported = new ReportedSummary(
+                    mesg.getSport() == null ? null : mesg.getSport().name(),
+                    mesg.getSubSport() == null ? null : mesg.getSubSport().name(),
+                    toDouble(mesg.getTotalElapsedTime()),
+                    toDouble(mesg.getTotalTimerTime()),
+                    toDouble(mesg.getTotalDistance()),
+                    toDouble(mesg.getTotalAscent()),
+                    toDouble(mesg.getTotalDescent()),
+                    preferEnhanced(mesg.getEnhancedAvgSpeed(), mesg.getAvgSpeed()),
+                    preferEnhanced(mesg.getEnhancedMaxSpeed(), mesg.getMaxSpeed()),
+                    toInteger(mesg.getAvgHeartRate()),
+                    toInteger(mesg.getMaxHeartRate()),
+                    toInteger(mesg.getAvgCadence()),
+                    toInteger(mesg.getAvgPower()),
+                    toInteger(mesg.getMaxPower()));
+        }
+
         private void requireFileId() {
             if (!fileIdSeen) {
                 throw new ImportRejectedException(
@@ -194,7 +224,8 @@ public final class FitParser implements ActivityFileParser {
             if (startedAt == null && !laps.isEmpty()) {
                 startedAt = laps.getFirst().startedAt();
             }
-            return new ImportedActivity(FileFormat.FIT, INFO, sourceKey, null, startedAt, laps, points.points());
+            return new ImportedActivity(
+                    FileFormat.FIT, INFO, sourceKey, null, startedAt, laps, points.points(), reported);
         }
 
         private static boolean isStop(EventType type) {

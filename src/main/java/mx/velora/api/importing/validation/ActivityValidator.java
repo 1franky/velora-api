@@ -12,6 +12,7 @@ import mx.velora.api.importing.ImportRejectedException;
 import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.ImportedLap;
 import mx.velora.api.importing.RejectionReason;
+import mx.velora.api.importing.ReportedSummary;
 import mx.velora.api.importing.TrackPoint;
 import mx.velora.api.importing.ValidatedActivity;
 import mx.velora.api.importing.ValidationWarning;
@@ -30,8 +31,11 @@ import org.jspecify.annotations.Nullable;
  */
 public final class ActivityValidator {
 
-    public static final String VERSION =
-            "import-validation/1+" + GpsJumpDetector.VERSION + "+" + FootprintCalculator.VERSION;
+    public static final String VERSION = "import-validation/2+" + GpsJumpDetector.VERSION + "+"
+            + AltitudeJumpDetector.VERSION + "+" + FootprintCalculator.VERSION;
+
+    /** Pausa a partir de la cual se advierte (p. ej. actividades reanudadas días después). */
+    static final Duration LONG_PAUSE = Duration.ofHours(6);
 
     /** Anterior a cualquier dispositivo GPS de consumo (y a la época FIT, 31/12/1989). */
     static final Instant EARLIEST_PLAUSIBLE = Instant.parse("1990-01-01T00:00:00Z");
@@ -59,6 +63,9 @@ public final class ActivityValidator {
         var jumps = GpsJumpDetector.detect(points);
         jumps.stream().forEach(i -> points.set(i, withoutPosition(points.get(i))));
         add(counts, Code.GPS_JUMPS, jumps.cardinality());
+        var altitudeJumps = AltitudeJumpDetector.detect(points);
+        altitudeJumps.stream().forEach(i -> points.set(i, withoutAltitude(points.get(i))));
+        add(counts, Code.ALTITUDE_JUMPS, altitudeJumps.cardinality());
 
         var laps = activity.laps().stream().map(lap -> sanitize(lap, counts)).toList();
 
@@ -69,7 +76,8 @@ public final class ActivityValidator {
                 activity.title(),
                 activity.startedAt(),
                 laps,
-                points);
+                points,
+                sanitize(activity.reported(), counts));
         return new ValidatedActivity(sanitized, warnings(counts), FootprintCalculator.compute(sanitized), VERSION);
     }
 
@@ -88,6 +96,9 @@ public final class ActivityValidator {
             }
             if (previous != null && time.isBefore(previous)) {
                 add(counts, Code.NON_MONOTONIC_TIME, 1);
+            }
+            if (previous != null && Duration.between(previous, time).compareTo(LONG_PAUSE) >= 0) {
+                add(counts, Code.LONG_PAUSES, 1);
             }
             previous = time;
         }
@@ -149,6 +160,55 @@ public final class ActivityValidator {
                 l.averageCadenceRpm(),
                 l.averagePowerWatts(),
                 l.maxPowerWatts());
+    }
+
+    private static ReportedSummary sanitize(ReportedSummary r, Map<Code, Integer> counts) {
+        var elapsed = nonNegative(r.elapsedTimeSeconds());
+        var timer = nonNegative(r.timerTimeSeconds());
+        var distance = nonNegative(r.distanceMeters());
+        var ascent = nonNegative(r.ascentMeters());
+        var descent = nonNegative(r.descentMeters());
+        var avgSpeed = nonNegative(r.averageSpeedMps());
+        var maxSpeed = nonNegative(r.maxSpeedMps());
+        if (elapsed != r.elapsedTimeSeconds()
+                || timer != r.timerTimeSeconds()
+                || distance != r.distanceMeters()
+                || ascent != r.ascentMeters()
+                || descent != r.descentMeters()
+                || avgSpeed != r.averageSpeedMps()
+                || maxSpeed != r.maxSpeedMps()) {
+            add(counts, Code.NEGATIVE_VALUES, 1);
+        }
+        return new ReportedSummary(
+                r.sport(),
+                r.subSport(),
+                elapsed,
+                timer,
+                distance,
+                ascent,
+                descent,
+                avgSpeed,
+                maxSpeed,
+                r.averageHeartRateBpm(),
+                r.maxHeartRateBpm(),
+                r.averageCadenceRpm(),
+                r.averagePowerWatts(),
+                r.maxPowerWatts());
+    }
+
+    private static TrackPoint withoutAltitude(TrackPoint p) {
+        return new TrackPoint(
+                p.segment(),
+                p.time(),
+                p.latitude(),
+                p.longitude(),
+                null,
+                p.distanceMeters(),
+                p.heartRateBpm(),
+                p.cadenceRpm(),
+                p.powerWatts(),
+                p.speedMps(),
+                p.temperatureCelsius());
     }
 
     private static TrackPoint withoutPosition(TrackPoint p) {

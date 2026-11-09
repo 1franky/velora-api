@@ -6,6 +6,7 @@ import mx.velora.api.importing.FileFormat;
 import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.ImportedLap;
 import mx.velora.api.importing.ParserInfo;
+import mx.velora.api.importing.ReportedSummary;
 import mx.velora.api.importing.TrackPoint;
 import org.jspecify.annotations.Nullable;
 
@@ -24,7 +25,8 @@ final class Activities {
     }
 
     static ImportedActivity of(List<TrackPoint> points, List<ImportedLap> laps) {
-        return new ImportedActivity(FileFormat.GPX, new ParserInfo("test", "1"), null, null, START, laps, points);
+        return new ImportedActivity(
+                FileFormat.GPX, new ParserInfo("test", "1"), null, null, START, laps, points, ReportedSummary.EMPTY);
     }
 
     /** Punto con posición en el segmento 0, {@code offsetSeconds} después de {@link #START}. */

@@ -9,6 +9,7 @@ import javax.xml.stream.XMLStreamReader;
 import mx.velora.api.importing.FileFormat;
 import mx.velora.api.importing.ImportedActivity;
 import mx.velora.api.importing.ParserInfo;
+import mx.velora.api.importing.ReportedSummary;
 import org.jspecify.annotations.Nullable;
 
 /**
@@ -89,7 +90,15 @@ public final class GpxParser implements ActivityFileParser {
             }
         }
 
-        return new ImportedActivity(FileFormat.GPX, INFO, null, title, points.firstTime(), List.of(), points.points());
+        return new ImportedActivity(
+                FileFormat.GPX,
+                INFO,
+                null,
+                title,
+                points.firstTime(),
+                List.of(),
+                points.points(),
+                ReportedSummary.EMPTY);
     }
 
     /** Lee un campo hoja de {@code trkpt}. Devuelve {@code false} si el elemento no es un campo conocido. */
