@@ -6,7 +6,7 @@ Backend de **Velora**, plataforma personal de analítica de ciclismo (ruta y MTB
 
 ## Stack previsto
 
-- Kotlin + Spring Boot, arquitectura *modular monolith*.
+- Java + Spring Boot, arquitectura *modular monolith* (ADR-007; Android sí usa Kotlin).
 - PostgreSQL + PostGIS, migraciones con Flyway.
 - Contrato HTTP OpenAPI 3.1 versionado.
 - Docker Compose para desarrollo.

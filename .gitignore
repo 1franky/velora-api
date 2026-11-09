@@ -1,8 +1,9 @@
-# Gradle / Kotlin
+# Gradle / Maven / Java
 .gradle/
 build/
 !gradle/wrapper/gradle-wrapper.jar
-.kotlin/
+target/
+.mvn/wrapper/maven-wrapper.jar
 *.class
 *.log
 
