@@ -65,8 +65,25 @@ spotless {
     }
 }
 
-tasks.withType<Test> {
-    useJUnitPlatform()
+tasks.test {
+    useJUnitPlatform {
+        excludeTags("benchmark")
+    }
+}
+
+// Benchmarks reproducibles (no corren en `build` ni en CI). Resultados en build/benchmark/.
+tasks.register<Test>("benchmark") {
+    group = "verification"
+    description = "Ejecuta los benchmarks etiquetados con @Tag(\"benchmark\")."
+    testClassesDirs = sourceSets["test"].output.classesDirs
+    classpath = sourceSets["test"].runtimeClasspath
+    useJUnitPlatform {
+        includeTags("benchmark")
+    }
+    outputs.upToDateWhen { false }
+    testLogging {
+        showStandardStreams = true
+    }
 }
 
 // Carga variables de `.env` (no versionado) en las tareas de desarrollo local.
