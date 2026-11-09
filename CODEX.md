@@ -1,6 +1,6 @@
 # Guía de trabajo para Codex
 
-> Copia del archivo homónimo de `velora-project-kit` (carpeta padre). La especificación vive en `../docs/` y el contrato en `../contracts/openapi-v1.yaml`.
+> Copia del archivo homónimo de `velora-project-kit` (carpeta padre). La especificación vive en `../docs/` y el contrato en `openapi/openapi-v1.yaml` (fuente de verdad, ADR-011).
 
 Lee primero `AGENTS.md` y `README.md` (de este repo y `../README.md` del kit). Después, consulta los documentos de `../docs/` correspondientes a la tarea.
 

@@ -58,6 +58,10 @@ El puerto HTTP se configura con `VELORA_API_PORT` (8080 por defecto).
 - Hibernate en `ddl-auto: validate`: el esquema solo cambia mediante Flyway.
 - Instantes persistidos en UTC.
 
+## Contrato HTTP
+
+`openapi/openapi-v1.yaml` (OpenAPI 3.1) es la fuente de verdad de la API para `velora-web` y `velora-android` (ADR-011). Cualquier cambio de endpoints o campos se hace en ese archivo dentro del mismo PR que lo implementa. `OpenApiContract` (en pruebas) valida solicitudes y respuestas contra él.
+
 ## Importación de actividades
 
 El módulo `importing` detecta el formato por contenido (no por extensión) y lo convierte en un `ImportedActivity` canónico. Estado actual:
