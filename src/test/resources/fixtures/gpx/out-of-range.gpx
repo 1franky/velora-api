@@ -1,0 +1,13 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture sintético: puntos fuera de rango y un (0,0) de receptor sin fix, mezclados con puntos válidos. -->
+<gpx version="1.1" creator="velora-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk>
+    <trkseg>
+      <trkpt lat="19.300000" lon="-99.200000"><time>2026-11-08T14:00:00Z</time></trkpt>
+      <trkpt lat="95.000000" lon="-99.200010"><time>2026-11-08T14:00:01Z</time></trkpt>
+      <trkpt lat="19.300020" lon="-200.000000"><time>2026-11-08T14:00:02Z</time></trkpt>
+      <trkpt lat="0" lon="0"><time>2026-11-08T14:00:03Z</time></trkpt>
+      <trkpt lat="19.300040" lon="-99.200040"><time>2026-11-08T14:00:04Z</time></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

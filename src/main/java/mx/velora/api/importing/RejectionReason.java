@@ -11,5 +11,7 @@ public enum RejectionReason {
     /** El archivo contiene construcciones XML prohibidas (DTD, entidades), p. ej. intentos de XXE. */
     FORBIDDEN_XML_CONSTRUCT,
     /** El archivo supera el número máximo de muestras permitido. */
-    TOO_MANY_POINTS
+    TOO_MANY_POINTS,
+    /** El formato es correcto, pero los datos no describen una actividad válida (sin muestras, tiempos imposibles). */
+    INVALID_DATA
 }
