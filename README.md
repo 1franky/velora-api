@@ -68,7 +68,9 @@ El módulo `importing` detecta el formato por contenido (no por extensión) y lo
 | TCX | Soportado (TrainingCenterDatabase v2: vueltas, sensores y extensiones ActivityExtension v2) |
 | FIT | Soportado (Garmin FIT SDK 21.221.0 tras un adaptador; actividades, vueltas, pausas del cronómetro) |
 
-El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen contenido del archivo. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
+El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen contenido del archivo.
+
+Después del parseo, `ActivityValidator` rechaza actividades sin muestras, sin tiempos o con tiempos imposibles, y sanea coordenadas inválidas, saltos de GPS y valores negativos dejando el dato en `null` con una advertencia. `ActivityFootprint` resume inicio, duración, distancia (informada o derivada) y recuadro para la deduplicación heurística (`DuplicateHeuristic`), que solo advierte y nunca descarta. Reglas y umbrales en ADR-009. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
 
 ## Licencia
 
