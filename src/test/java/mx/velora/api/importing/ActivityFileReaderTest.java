@@ -22,6 +22,17 @@ class ActivityFileReaderTest {
 
             assertThat(activity.format()).isEqualTo(FileFormat.GPX);
             assertThat(activity.points()).hasSize(2);
+            assertThat(activity.laps()).as("GPX no tiene vueltas").isEmpty();
+        }
+    }
+
+    @Test
+    void readsTcxWithLaps() throws IOException {
+        try (var in = Objects.requireNonNull(getClass().getResourceAsStream("/fixtures/tcx/with-laps.tcx"))) {
+            var activity = reader.read(in);
+
+            assertThat(activity.format()).isEqualTo(FileFormat.TCX);
+            assertThat(activity.laps()).hasSize(2);
         }
     }
 

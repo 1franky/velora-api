@@ -1,0 +1,26 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture sintético: rodillo/indoor sin GPS, con FC y potencia. Sin Creator. -->
+<TrainingCenterDatabase
+    xmlns="http://www.garmin.com/xmlschemas/TrainingCenterDatabase/v2"
+    xmlns:ns3="http://www.garmin.com/xmlschemas/ActivityExtension/v2">
+  <Activities>
+    <Activity Sport="Biking">
+      <Id>2026-11-09T06:00:00Z</Id>
+      <Lap StartTime="2026-11-09T06:00:00Z">
+        <TotalTimeSeconds>2</TotalTimeSeconds>
+        <Track>
+          <Trackpoint>
+            <Time>2026-11-09T06:00:00Z</Time>
+            <HeartRateBpm><Value>110</Value></HeartRateBpm>
+            <Extensions><ns3:TPX><ns3:Watts>150</ns3:Watts></ns3:TPX></Extensions>
+          </Trackpoint>
+          <Trackpoint>
+            <Time>2026-11-09T06:00:01Z</Time>
+            <HeartRateBpm><Value>111</Value></HeartRateBpm>
+            <Extensions><ns3:TPX><ns3:Watts>155</ns3:Watts></ns3:TPX></Extensions>
+          </Trackpoint>
+        </Track>
+      </Lap>
+    </Activity>
+  </Activities>
+</TrainingCenterDatabase>
