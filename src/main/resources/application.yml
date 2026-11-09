@@ -1,0 +1,50 @@
+spring:
+  application:
+    name: velora-api
+  datasource:
+    url: ${VELORA_DB_URL:jdbc:postgresql://localhost:5432/velora}
+    username: ${VELORA_DB_USERNAME:velora}
+    password: ${VELORA_DB_PASSWORD:}
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate
+    properties:
+      hibernate:
+        jdbc:
+          time_zone: UTC
+  flyway:
+    locations: classpath:db/migration
+  mvc:
+    problemdetails:
+      enabled: true
+  messages:
+    basename: messages
+    encoding: UTF-8
+    fallback-to-system-locale: false
+  web:
+    locale: es_MX
+    locale-resolver: fixed
+
+server:
+  port: ${VELORA_API_PORT:8080}
+  error:
+    include-stacktrace: never
+    include-message: never
+    include-binding-errors: never
+    include-exception: false
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health
+  endpoint:
+    health:
+      show-details: never
+      probes:
+        enabled: true
+
+velora:
+  defaults:
+    time-zone: America/Mexico_City

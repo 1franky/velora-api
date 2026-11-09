@@ -1,0 +1,20 @@
+# Servicios de desarrollo local. Las credenciales se leen de `.env` (copia `.env.example`).
+services:
+  postgres:
+    image: postgis/postgis:18-3.7
+    environment:
+      POSTGRES_DB: ${VELORA_DB_NAME:-velora}
+      POSTGRES_USER: ${VELORA_DB_USERNAME:-velora}
+      POSTGRES_PASSWORD: ${VELORA_DB_PASSWORD:?Define VELORA_DB_PASSWORD en .env}
+    ports:
+      - "127.0.0.1:${VELORA_DB_PORT:-5432}:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+volumes:
+  postgres-data:
