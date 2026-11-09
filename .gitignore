@@ -1,0 +1,30 @@
+# Gradle / Kotlin
+.gradle/
+build/
+!gradle/wrapper/gradle-wrapper.jar
+.kotlin/
+*.class
+*.log
+
+# IDE
+.idea/
+*.iml
+.vscode/
+out/
+
+# Entorno y secretos
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+
+# Datos locales (nunca versionar actividades reales)
+data/
+uploads/
+*.fit
+*.gpx
+*.tcx
+!src/test/resources/fixtures/**
+
+.DS_Store
