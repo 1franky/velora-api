@@ -12,6 +12,7 @@ import java.util.stream.Collectors;
 import mx.velora.api.activity.ActivityLookup;
 import mx.velora.api.activity.ActivityRegistration;
 import mx.velora.api.activity.ActivityRegistration.DuplicateOriginalException;
+import mx.velora.api.activity.ActivityReprocessing;
 import mx.velora.api.activity.NewActivity;
 import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.UserTimeZones;
@@ -54,6 +55,7 @@ class ImportProcessor {
     private final ImportJobRepository jobs;
     private final OriginalFileStore store;
     private final ActivityRegistration registration;
+    private final ActivityReprocessing reprocessing;
     private final ActivityLookup activities;
     private final CatalogLookup catalog;
     private final UserTimeZones timeZones;
@@ -66,6 +68,7 @@ class ImportProcessor {
             ImportJobRepository jobs,
             OriginalFileStore store,
             ActivityRegistration registration,
+            ActivityReprocessing reprocessing,
             ActivityLookup activities,
             CatalogLookup catalog,
             UserTimeZones timeZones,
@@ -74,6 +77,7 @@ class ImportProcessor {
         this.jobs = jobs;
         this.store = store;
         this.registration = registration;
+        this.reprocessing = reprocessing;
         this.activities = activities;
         this.catalog = catalog;
         this.timeZones = timeZones;
@@ -84,16 +88,28 @@ class ImportProcessor {
     }
 
     void process(ClaimedJob job) {
+        if (job.isReprocess() && job.activityId() == null) {
+            // La actividad se borró mientras el reproceso esperaba (FK con ON DELETE SET NULL).
+            jobs.fail(job.id(), "ACTIVITY_NOT_FOUND", ImportMessages.ACTIVITY_GONE, clock.instant());
+            return;
+        }
         String format = null;
         try {
             var imported = read(job);
             format = imported.format().name();
             var validated = validator.validate(imported);
             var derived = DerivedMetricsCalculator.compute(validated.activity(), DerivedMetrics.Parameters.DEFAULT);
-            handle(job, validated, derived, format);
+            if (job.isReprocess()) {
+                reprocess(job, validated, derived, format);
+            } else {
+                handle(job, validated, derived, format);
+            }
         } catch (ImportRejectedException e) {
             jobs.reject(job.id(), e.reason().name(), ImportMessages.detail(e), clock.instant());
-            deleteOriginal(job);
+            // Un reproceso rechazado deja la actividad y su original intactos.
+            if (!job.isReprocess()) {
+                deleteOriginal(job);
+            }
         } catch (RuntimeException | IOException e) {
             onUnexpected(job, e);
         }
@@ -141,6 +157,21 @@ class ImportProcessor {
         } catch (DuplicateOriginalException e) {
             finishAsDuplicateOrOwn(job, e.existingActivityId(), format, validated, possibleDuplicates);
         }
+    }
+
+    /** Recalcula una actividad existente desde su original, sin deduplicar ni crear actividades. */
+    private void reprocess(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
+        var now = clock.instant();
+        var target = job.activityId();
+        if (target == null
+                || !reprocessing.replace(
+                        job.userId(),
+                        target,
+                        ActivityMapper.toNewActivity(validated, derived, context(job, validated.activity())))) {
+            jobs.fail(job.id(), "ACTIVITY_NOT_FOUND", ImportMessages.ACTIVITY_GONE, now);
+            return;
+        }
+        jobs.complete(job.id(), target, format, warnings(validated, List.of()), List.of(), now);
     }
 
     /** Si la actividad existente usa este mismo original, la registró un intento anterior: se completa. */

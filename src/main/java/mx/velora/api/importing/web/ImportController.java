@@ -37,6 +37,7 @@ class ImportController {
 
     record ImportJob(
             UUID jobId,
+            String kind,
             String status,
             @Nullable UUID activityId,
             @Nullable String errorCode,
@@ -122,6 +123,7 @@ class ImportController {
         var view = jobs.find(user.userId(), jobId).orElseThrow(ImportJobNotFoundException::new);
         return new ImportJob(
                 view.id(),
+                view.kind(),
                 view.status(),
                 view.activityId(),
                 view.errorCode(),
