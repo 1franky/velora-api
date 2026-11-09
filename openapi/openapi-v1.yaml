@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.6.0
+  version: 1.7.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -308,6 +308,31 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ActivityStreams' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/track:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Recorrido de la actividad como GeoJSON simplificado para un nivel de zoom
+      description: >
+        Un tramo por segmento (las pausas no se dibujan). La simplificación usa una tolerancia de aproximadamente
+        un píxel en el zoom pedido; el track original no se modifica. Solo para el propietario.
+      operationId: getActivityTrack
+      parameters:
+        - in: query
+          name: zoom
+          schema: { type: integer, minimum: 0, maximum: 22, default: 14 }
+      responses:
+        '200':
+          description: Recorrido
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ActivityTrack' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
@@ -713,6 +738,40 @@ components:
           additionalProperties:
             type: array
             items: { type: [number, 'null'] }
+    ActivityTrack:
+      type: object
+      description: GeoJSON Feature (RFC 7946) con coordenadas [longitud, latitud] en WGS84.
+      required: [type, bbox, geometry, properties]
+      properties:
+        type: { type: string, enum: [Feature] }
+        bbox:
+          type: array
+          description: '[oeste, sur, este, norte]'
+          minItems: 4
+          maxItems: 4
+          items: { type: number }
+        geometry:
+          type: object
+          required: [type, coordinates]
+          properties:
+            type: { type: string, enum: [MultiLineString] }
+            coordinates:
+              type: array
+              items:
+                type: array
+                items:
+                  type: array
+                  minItems: 2
+                  maxItems: 2
+                  items: { type: number }
+        properties:
+          type: object
+          required: [activityId, pointCount, returnedPointCount, zoom]
+          properties:
+            activityId: { type: string, format: uuid }
+            pointCount: { type: integer, minimum: 2, description: Puntos del track original. }
+            returnedPointCount: { type: integer, minimum: 2 }
+            zoom: { type: integer }
     ActivityLap:
       type: object
       required: [lapNumber, startedAt, elapsedTimeSeconds, timerTimeSeconds, distanceMeters, averageSpeedMps,

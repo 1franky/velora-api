@@ -162,6 +162,32 @@ public class ActivityQueries {
                 .optional();
     }
 
+    /** Recorrido simplificado: geometría GeoJSON (6 decimales), recuadro y conteos. */
+    public record Track(String geometryJson, double[] bbox, int pointCount, int returnedPointCount) {}
+
+    /** {@code null} si la actividad no tiene recorrido (p. ej. rodillo). */
+    public Optional<Track> track(UUID activityId, double toleranceDegrees) {
+        return jdbc.sql("""
+                        WITH t AS (
+                            SELECT route_geom, point_count, ST_SimplifyPreserveTopology(route_geom, :tolerance) AS simple
+                            FROM activity_tracks WHERE activity_id = :id)
+                        SELECT ST_AsGeoJSON(simple, 6) AS geojson, ST_NPoints(simple) AS returned, point_count,
+                               ST_XMin(route_geom) AS west, ST_YMin(route_geom) AS south,
+                               ST_XMax(route_geom) AS east, ST_YMax(route_geom) AS north
+                        FROM t
+                        """)
+                .param("tolerance", toleranceDegrees)
+                .param("id", activityId)
+                .query((rs, n) -> new Track(
+                        rs.getString("geojson"),
+                        new double[] {
+                            rs.getDouble("west"), rs.getDouble("south"), rs.getDouble("east"), rs.getDouble("north")
+                        },
+                        rs.getInt("point_count"),
+                        rs.getInt("returned")))
+                .optional();
+    }
+
     public boolean exists(UUID userId, UUID activityId) {
         return jdbc.sql("SELECT EXISTS (SELECT 1 FROM activities WHERE user_id = :user AND id = :id)")
                 .param("user", userId)

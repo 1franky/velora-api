@@ -68,6 +68,15 @@ class ActivityController {
 
     record Laps(List<ActivityQueries.Lap> items) {}
 
+    record TrackProperties(UUID activityId, int pointCount, int returnedPointCount, int zoom) {}
+
+    record TrackFeature(
+            String type, double[] bbox, @JsonRawValue String geometry, TrackProperties properties) {}
+
+    static final int MAX_ZOOM = 22;
+    static final double METERS_PER_PIXEL_ZOOM_0 = 156_543.03392;
+    static final double METERS_PER_DEGREE = 111_320;
+
     private final ActivityQueries queries;
     private final ActivityDeletion deletion;
 
@@ -138,6 +147,28 @@ class ActivityController {
         requireOwned(user, activityId);
         var streams = queries.streams(activityId, parseTypes(types));
         return new StreamsResponse(streams.sampleCount(), streams.values());
+    }
+
+    /**
+     * Recorrido simplificado con una tolerancia de ~1 píxel en el zoom pedido: metros por píxel en Web Mercator
+     * (156 543 m/px en el zoom 0, ecuador) convertidos a grados.
+     */
+    @GetMapping(value = "/{activityId}/track", produces = "application/geo+json")
+    TrackFeature track(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID activityId,
+            @RequestParam(defaultValue = "14") int zoom) {
+        if (zoom < 0 || zoom > MAX_ZOOM) {
+            throw new InvalidActivityQueryException();
+        }
+        requireOwned(user, activityId);
+        var toleranceDegrees = METERS_PER_PIXEL_ZOOM_0 / Math.pow(2, zoom) / METERS_PER_DEGREE;
+        var track = queries.track(activityId, toleranceDegrees).orElseThrow(TrackNotFoundException::new);
+        return new TrackFeature(
+                "Feature",
+                track.bbox(),
+                track.geometryJson(),
+                new TrackProperties(activityId, track.pointCount(), track.returnedPointCount(), zoom));
     }
 
     @GetMapping("/{activityId}/laps")
@@ -218,6 +249,12 @@ class ActivityController {
     static final class InvalidActivityQueryException extends ErrorResponseException {
         InvalidActivityQueryException() {
             super(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    static final class TrackNotFoundException extends ErrorResponseException {
+        TrackNotFoundException() {
+            super(HttpStatus.NOT_FOUND);
         }
     }
 
