@@ -57,6 +57,22 @@ El puerto HTTP se configura con `VELORA_API_PORT` (8080 por defecto).
 - Hibernate en `ddl-auto: validate`: el esquema solo cambia mediante Flyway.
 - Instantes persistidos en UTC.
 
+## Importación de actividades
+
+El módulo `importing` detecta el formato por contenido (no por extensión) y lo convierte en un `ImportedActivity` canónico. Estado actual:
+
+| Formato | Estado |
+|---|---|
+| GPX 1.0/1.1 | Soportado (parser StAX propio, con extensiones de sensores habituales) |
+| TCX | Detectado; parser pendiente |
+| FIT | Detectado; parser pendiente (Garmin FIT SDK, ADR-009) |
+
+El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen contenido del archivo. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
+
+## Licencia
+
+[Apache-2.0](LICENSE). El Garmin FIT SDK, cuando se incorpore, se usa como dependencia bajo su propia licencia (FIT Protocol License) y no se redistribuye en este repositorio.
+
 ## Repositorios relacionados
 
 - `velora-web` — aplicación web (Next.js + TypeScript).

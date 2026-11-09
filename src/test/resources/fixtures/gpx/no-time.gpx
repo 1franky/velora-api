@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!-- Fixture sintético: GPX sin timestamps (p. ej. exportado desde un planificador). -->
+<gpx version="1.0" creator="velora-fixtures" xmlns="http://www.topografix.com/GPX/1/0">
+  <trk>
+    <name>Sin tiempos</name>
+    <trkseg>
+      <trkpt lat="19.400000" lon="-99.100000"><ele>2250</ele></trkpt>
+      <trkpt lat="19.400100" lon="-99.100100"><ele>2251</ele></trkpt>
+    </trkseg>
+  </trk>
+</gpx>

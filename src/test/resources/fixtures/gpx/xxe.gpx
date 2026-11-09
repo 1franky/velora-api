@@ -1,0 +1,7 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE gpx [ <!ENTITY xxe SYSTEM "file:///etc/hosts"> ]>
+<gpx version="1.1" creator="velora-fixtures" xmlns="http://www.topografix.com/GPX/1/1">
+  <trk><name>&xxe;</name>
+    <trkseg><trkpt lat="19.0" lon="-99.0"/></trkseg>
+  </trk>
+</gpx>
