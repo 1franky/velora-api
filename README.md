@@ -42,6 +42,16 @@ curl localhost:8080/actuator/health
 Si cambias `VELORA_DB_PORT`, actualiza también el puerto en `VELORA_DB_URL`.
 El puerto HTTP se configura con `VELORA_API_PORT` (8080 por defecto).
 
+## Autenticación
+
+Un solo usuario propietario, sin registro público (ADR-010). Para crearlo una vez:
+
+```bash
+VELORA_OWNER_EMAIL=tu@correo.mx VELORA_OWNER_PASSWORD='mínimo 12 caracteres' ./gradlew bootstrapOwner
+```
+
+El comando falla si ya existe un usuario. Después, `POST /api/v1/auth/login` devuelve un access token (15 min) y un refresh token (30 días, de un solo uso: reutilizarlo revoca la sesión). Las rutas de `/api/v1` requieren `Authorization: Bearer <accessToken>`; los intentos fallidos de login se limitan por correo e IP. Contraseñas con Argon2id; en base de datos solo se guardan hashes de los tokens.
+
 ## Comandos
 
 | Comando | Qué hace |
@@ -49,6 +59,7 @@ El puerto HTTP se configura con `VELORA_API_PORT` (8080 por defecto).
 | `./gradlew build` | Compila, verifica formato y ejecuta todas las pruebas (requiere Docker) |
 | `./gradlew test` | Solo pruebas |
 | `./gradlew spotlessApply` | Aplica el formato |
+| `./gradlew bootstrapOwner` | Crea el usuario propietario (una sola vez) |
 
 ## Convenciones ya activas
 

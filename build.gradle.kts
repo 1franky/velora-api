@@ -23,6 +23,7 @@ extra["springModulithVersion"] = "2.1.1"
 
 dependencies {
     implementation("org.springframework.boot:spring-boot-starter-actuator")
+    implementation("org.springframework.boot:spring-boot-starter-security")
     implementation("org.springframework.boot:spring-boot-starter-data-jpa")
     implementation("org.springframework.boot:spring-boot-starter-flyway")
     implementation("org.springframework.boot:spring-boot-starter-validation")
@@ -31,9 +32,12 @@ dependencies {
     implementation("org.springframework.modulith:spring-modulith-starter-core")
     // Garmin FIT SDK: FIT Protocol License (propietaria). No redistribuir su código fuente; ver ADR-009.
     implementation("com.garmin:fit:21.221.0")
+    // Requerido por Argon2PasswordEncoder (ADR-010). Licencia MIT.
+    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
+    testImplementation("org.springframework.boot:spring-boot-starter-security-test")
     testImplementation("org.springframework.boot:spring-boot-starter-data-jpa-test")
     testImplementation("org.springframework.boot:spring-boot-starter-flyway-test")
     testImplementation("org.springframework.boot:spring-boot-starter-validation-test")
@@ -65,8 +69,8 @@ tasks.withType<Test> {
     useJUnitPlatform()
 }
 
-// Carga variables de `.env` (no versionado) solo para `bootRun` en desarrollo local.
-tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+// Carga variables de `.env` (no versionado) en las tareas de desarrollo local.
+fun org.springframework.boot.gradle.tasks.run.BootRun.loadDotEnv() {
     val envFile = file(".env")
     if (envFile.exists()) {
         envFile
@@ -79,4 +83,19 @@ tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
             }
     }
     systemProperty("spring.profiles.active", "local")
+}
+
+tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun") {
+    loadDotEnv()
+}
+
+// Crea el usuario propietario una sola vez (ADR-010). Lee VELORA_OWNER_EMAIL y VELORA_OWNER_PASSWORD.
+tasks.register<org.springframework.boot.gradle.tasks.run.BootRun>("bootstrapOwner") {
+    group = "velora"
+    description = "Crea el usuario propietario; falla si ya existe un usuario."
+    val bootRun = tasks.named<org.springframework.boot.gradle.tasks.run.BootRun>("bootRun").get()
+    mainClass.set(bootRun.mainClass)
+    classpath = bootRun.classpath
+    args("--velora.bootstrap-owner", "--spring.main.web-application-type=none")
+    loadDotEnv()
 }

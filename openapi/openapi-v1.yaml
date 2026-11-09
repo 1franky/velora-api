@@ -1,20 +1,15 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.1.0
-  description: API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
+  version: 1.2.0
+  description: >
+    API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
+    La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
 servers:
   - url: /api/v1
 security:
   - bearerAuth: []
 paths:
-  /health:
-    get:
-      summary: Estado de salud
-      security: []
-      responses:
-        '200':
-          description: Servicio disponible
   /auth/login:
     post:
       summary: Iniciar sesión con correo y contraseña
