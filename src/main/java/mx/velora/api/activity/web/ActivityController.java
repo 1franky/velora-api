@@ -16,11 +16,11 @@ import java.util.Set;
 import java.util.UUID;
 import mx.velora.api.activity.ActivityDeletion;
 import mx.velora.api.activity.ActivitySubType;
+import mx.velora.api.activity.ActivitySummary;
 import mx.velora.api.activity.StreamType;
 import mx.velora.api.activity.persistence.ActivityQueries;
 import mx.velora.api.activity.persistence.ActivityQueries.Filter;
 import mx.velora.api.activity.persistence.ActivityQueries.Position;
-import mx.velora.api.activity.persistence.ActivityQueries.Summary;
 import mx.velora.api.identity.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -42,12 +42,12 @@ class ActivityController {
     static final int DEFAULT_LIMIT = 25;
     static final int MAX_LIMIT = 100;
 
-    record Page(List<Summary> items, @Nullable String nextCursor) {}
+    record Page(List<ActivitySummary> items, @Nullable String nextCursor) {}
 
     record OriginalFile(String format, long sizeBytes, Instant importedAt) {}
 
     record Detail(
-            @JsonUnwrapped Summary summary,
+            @JsonUnwrapped ActivitySummary summary,
             String timeZone,
             String sourceType,
             @Nullable UUID deviceId,
