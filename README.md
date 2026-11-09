@@ -16,6 +16,7 @@ Backend de **Velora**, plataforma personal de analítica de ciclismo (ruta y MTB
 | Spring Modulith | 2.1.1 | Verifica límites entre módulos en pruebas |
 | Testcontainers | gestionado por Boot | Pruebas de integración contra PostGIS real |
 | Spotless + palantir-java-format | 8.11.0 / 2.103.0 | Formato verificado en `./gradlew build` |
+| Garmin FIT SDK | 21.221.0 | FIT Protocol License (propietaria); ADR-009 |
 
 ## Módulos
 
@@ -65,13 +66,13 @@ El módulo `importing` detecta el formato por contenido (no por extensión) y lo
 |---|---|
 | GPX 1.0/1.1 | Soportado (parser StAX propio, con extensiones de sensores habituales) |
 | TCX | Soportado (TrainingCenterDatabase v2: vueltas, sensores y extensiones ActivityExtension v2) |
-| FIT | Detectado; parser pendiente (Garmin FIT SDK, ADR-009) |
+| FIT | Soportado (Garmin FIT SDK 21.221.0 tras un adaptador; actividades, vueltas, pausas del cronómetro) |
 
 El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen contenido del archivo. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
 
 ## Licencia
 
-[Apache-2.0](LICENSE). El Garmin FIT SDK, cuando se incorpore, se usa como dependencia bajo su propia licencia (FIT Protocol License) y no se redistribuye en este repositorio.
+[Apache-2.0](LICENSE). El Garmin FIT SDK se usa como dependencia de Maven Central bajo su propia licencia (FIT Protocol License) y no se redistribuye en este repositorio.
 
 ## Repositorios relacionados
 

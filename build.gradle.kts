@@ -29,6 +29,8 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
+    // Garmin FIT SDK: FIT Protocol License (propietaria). No redistribuir su código fuente; ver ADR-009.
+    implementation("com.garmin:fit:21.221.0")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")

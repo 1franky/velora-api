@@ -7,6 +7,7 @@ import java.util.List;
 import java.util.Map;
 import mx.velora.api.importing.parsing.ActivityFileParser;
 import mx.velora.api.importing.parsing.FileFormatDetector;
+import mx.velora.api.importing.parsing.FitParser;
 import mx.velora.api.importing.parsing.GpxParser;
 import mx.velora.api.importing.parsing.ParserLimits;
 import mx.velora.api.importing.parsing.TcxParser;
@@ -25,7 +26,7 @@ public final class ActivityFileReader {
     }
 
     public static ActivityFileReader withDefaultParsers(ParserLimits limits) {
-        return new ActivityFileReader(List.of(new GpxParser(limits), new TcxParser(limits)));
+        return new ActivityFileReader(List.of(new FitParser(limits), new GpxParser(limits), new TcxParser(limits)));
     }
 
     /**
