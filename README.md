@@ -87,6 +87,12 @@ El lector XML rechaza DTD y entidades externas (XXE). Los errores nunca incluyen
 
 Después del parseo, `ActivityValidator` rechaza actividades sin muestras, sin tiempos o con tiempos imposibles, y sanea coordenadas inválidas, saltos de GPS y valores negativos dejando el dato en `null` con una advertencia. `ActivityFootprint` resume inicio, duración, distancia (informada o derivada) y recuadro para la deduplicación heurística (`DuplicateHeuristic`), que solo advierte y nunca descarta. Reglas y umbrales en ADR-009. Los fixtures de `src/test/resources/fixtures/` son sintéticos.
 
+## Actividades
+
+El módulo `activity` registra actividades validadas en una sola transacción (ADR-012): `activities` con valores efectivos (prefieren el dato del dispositivo), `activity_metrics` con métricas del dispositivo y derivadas por separado, `activity_tracks` (`MultiLineString`, un tramo por segmento), vueltas, streams en `bytea` con el códec `velora-streams/1` y la referencia al archivo original.
+
+Los originales se guardan en disco (ADR-013) en `VELORA_STORAGE_ORIGINALS_PATH` (por defecto `data/originals`, ignorado por Git), con escritura atómica, permisos solo para el propietario del proceso y verificación de SHA-256 al leer.
+
 ## Licencia
 
 [Apache-2.0](LICENSE). El Garmin FIT SDK se usa como dependencia de Maven Central bajo su propia licencia (FIT Protocol License) y no se redistribuye en este repositorio.
