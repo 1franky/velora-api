@@ -1,26 +1,34 @@
 package mx.velora.api.activity.web;
 
 import com.fasterxml.jackson.annotation.JsonRawValue;
+import com.fasterxml.jackson.annotation.JsonSetter;
 import com.fasterxml.jackson.annotation.JsonUnwrapped;
+import jakarta.validation.Valid;
+import jakarta.validation.constraints.Size;
 import java.math.BigDecimal;
 import java.nio.ByteBuffer;
 import java.nio.charset.StandardCharsets;
+import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.Base64;
 import java.util.EnumSet;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Optional;
 import java.util.Set;
 import java.util.UUID;
 import mx.velora.api.activity.ActivityDeletion;
+import mx.velora.api.activity.ActivityEditing;
 import mx.velora.api.activity.ActivitySubType;
 import mx.velora.api.activity.ActivitySummary;
 import mx.velora.api.activity.StreamType;
 import mx.velora.api.activity.persistence.ActivityQueries;
 import mx.velora.api.activity.persistence.ActivityQueries.Filter;
 import mx.velora.api.activity.persistence.ActivityQueries.Position;
+import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.AuthenticatedUser;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
@@ -28,7 +36,9 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.ErrorResponseException;
 import org.springframework.web.bind.annotation.DeleteMapping;
 import org.springframework.web.bind.annotation.GetMapping;
+import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.PathVariable;
+import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.RequestMapping;
 import org.springframework.web.bind.annotation.RequestParam;
 import org.springframework.web.bind.annotation.ResponseStatus;
@@ -79,10 +89,72 @@ class ActivityController {
 
     private final ActivityQueries queries;
     private final ActivityDeletion deletion;
+    private final ActivityEditing editing;
+    private final CatalogLookup catalog;
+    private final Clock clock;
 
-    ActivityController(ActivityQueries queries, ActivityDeletion deletion) {
+    ActivityController(
+            ActivityQueries queries,
+            ActivityDeletion deletion,
+            ActivityEditing editing,
+            CatalogLookup catalog,
+            Clock clock) {
         this.queries = queries;
         this.deletion = deletion;
+        this.editing = editing;
+        this.catalog = catalog;
+        this.clock = clock;
+    }
+
+    /**
+     * PATCH parcial. Distingue un campo ausente (no se modifica) de un {@code null} explícito (en la bicicleta, la
+     * quita) registrando qué setters invocó Jackson, igual que {@code BikeController}.
+     */
+    static final class ActivityUpdate {
+        private final Set<String> present = new HashSet<>();
+
+        private @Nullable @Size(max = 200) String title;
+        private @Nullable ActivitySubType subType;
+        private @Nullable UUID bikeId;
+
+        @JsonSetter("title")
+        void setTitle(@Nullable String value) {
+            present.add("title");
+            title = value;
+        }
+
+        @JsonSetter("subType")
+        void setSubType(@Nullable ActivitySubType value) {
+            present.add("subType");
+            subType = value;
+        }
+
+        @JsonSetter("bikeId")
+        void setBikeId(@Nullable UUID value) {
+            present.add("bikeId");
+            bikeId = value;
+        }
+
+        boolean isInvalid() {
+            return present.isEmpty()
+                    || (present.contains("title") && (title == null || title.isBlank()))
+                    || (present.contains("subType") && subType == null);
+        }
+
+        @Nullable UUID bikeId() {
+            return bikeId;
+        }
+
+        boolean changesBike() {
+            return present.contains("bikeId");
+        }
+
+        ActivityEditing.Changes toChanges() {
+            return new ActivityEditing.Changes(
+                    present.contains("title") && title != null ? title.strip() : null,
+                    present.contains("subType") ? subType : null,
+                    present.contains("bikeId") ? Optional.ofNullable(bikeId) : null);
+        }
     }
 
     @GetMapping
@@ -115,6 +187,27 @@ class ActivityController {
         var page = rows.subList(0, size);
         var last = page.getLast();
         return new Page(page, encodeCursor(new Position(last.startedAt(), last.id())));
+    }
+
+    /** Corrige título, tipo o bicicleta; devuelve el detalle actualizado. */
+    @PatchMapping("/{activityId}")
+    Detail update(
+            @AuthenticationPrincipal AuthenticatedUser user,
+            @PathVariable UUID activityId,
+            @Valid @RequestBody ActivityUpdate body) {
+        if (body.isInvalid()) {
+            throw new InvalidActivityUpdateException();
+        }
+        var bike = body.bikeId();
+        if (body.changesBike()
+                && bike != null
+                && catalog.bikeType(user.userId(), bike).isEmpty()) {
+            throw new UnknownBikeException();
+        }
+        if (!editing.update(user.userId(), activityId, body.toChanges(), clock.instant())) {
+            throw new ActivityNotFoundException();
+        }
+        return detail(user, activityId);
     }
 
     @GetMapping("/{activityId}")
@@ -237,6 +330,20 @@ class ActivityController {
     static final class ActivityNotFoundException extends ErrorResponseException {
         ActivityNotFoundException() {
             super(HttpStatus.NOT_FOUND);
+        }
+    }
+
+    /** PATCH sin campos, con título vacío o con tipo nulo. */
+    static final class InvalidActivityUpdateException extends ErrorResponseException {
+        InvalidActivityUpdateException() {
+            super(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /** Bicicleta inexistente o de otro usuario (sin revelar cuál de las dos). */
+    static final class UnknownBikeException extends ErrorResponseException {
+        UnknownBikeException() {
+            super(HttpStatus.BAD_REQUEST);
         }
     }
 
