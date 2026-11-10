@@ -8,6 +8,7 @@ import java.sql.Timestamp;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.EnumMap;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -186,6 +187,20 @@ public class ActivityQueries {
                         rs.getInt("point_count"),
                         rs.getInt("returned")))
                 .optional();
+    }
+
+    /** Resúmenes de las actividades indicadas que pertenecen al usuario, de la más antigua a la más reciente. */
+    public List<ActivitySummary> summaries(UUID userId, Collection<UUID> ids) {
+        if (ids.isEmpty()) {
+            return List.of();
+        }
+        return jdbc.sql("SELECT " + SUMMARY_COLUMNS + """
+                         FROM activities a WHERE a.user_id = :user AND a.id IN (:ids)
+                        ORDER BY a.started_at, a.id""")
+                .param("user", userId)
+                .param("ids", ids)
+                .query(ActivityQueries::summary)
+                .list();
     }
 
     public boolean exists(UUID userId, UUID activityId) {
