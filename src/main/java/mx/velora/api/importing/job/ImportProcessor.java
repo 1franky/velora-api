@@ -3,7 +3,6 @@ package mx.velora.api.importing.job;
 import java.io.IOException;
 import java.io.OutputStream;
 import java.time.Clock;
-import java.time.Duration;
 import java.util.ArrayList;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -17,20 +16,15 @@ import mx.velora.api.activity.NewActivity;
 import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.UserTimeZones;
 import mx.velora.api.importing.ActivityFileReader;
-import mx.velora.api.importing.ActivityFootprint;
-import mx.velora.api.importing.BoundingBox;
 import mx.velora.api.importing.DerivedMetrics;
 import mx.velora.api.importing.ImportRejectedException;
 import mx.velora.api.importing.ImportedActivity;
-import mx.velora.api.importing.Measurement;
-import mx.velora.api.importing.MetricProvenance;
 import mx.velora.api.importing.ValidatedActivity;
 import mx.velora.api.importing.ValidationWarning;
 import mx.velora.api.importing.derive.DerivedMetricsCalculator;
 import mx.velora.api.importing.job.ImportJobRepository.ClaimedJob;
 import mx.velora.api.importing.parsing.ParserLimits;
 import mx.velora.api.importing.validation.ActivityValidator;
-import mx.velora.api.importing.validation.DuplicateHeuristic;
 import mx.velora.api.platform.storage.OriginalFileStore;
 import mx.velora.api.platform.storage.OriginalFileStore.StoredFile;
 import org.slf4j.Logger;
@@ -57,6 +51,7 @@ class ImportProcessor {
     private final ActivityRegistration registration;
     private final ActivityReprocessing reprocessing;
     private final ActivityLookup activities;
+    private final PossibleDuplicates duplicates;
     private final CatalogLookup catalog;
     private final UserTimeZones timeZones;
     private final ImportProperties properties;
@@ -70,6 +65,7 @@ class ImportProcessor {
             ActivityRegistration registration,
             ActivityReprocessing reprocessing,
             ActivityLookup activities,
+            PossibleDuplicates duplicates,
             CatalogLookup catalog,
             UserTimeZones timeZones,
             ImportProperties properties,
@@ -79,6 +75,7 @@ class ImportProcessor {
         this.registration = registration;
         this.reprocessing = reprocessing;
         this.activities = activities;
+        this.duplicates = duplicates;
         this.catalog = catalog;
         this.timeZones = timeZones;
         this.properties = properties;
@@ -142,7 +139,7 @@ class ImportProcessor {
             }
             possibleDuplicates.addAll(sameKey);
         }
-        possibleDuplicates.addAll(heuristicDuplicates(job.userId(), validated.footprint()));
+        possibleDuplicates.addAll(duplicates.near(job.userId(), validated.footprint()));
 
         try {
             var id = registration.register(ActivityMapper.toNewActivity(validated, derived, context(job, activity)));
@@ -194,30 +191,6 @@ class ImportProcessor {
         }
         jobs.duplicate(job.id(), existing, format, clock.instant());
         deleteOriginal(job);
-    }
-
-    private List<UUID> heuristicDuplicates(UUID userId, ActivityFootprint footprint) {
-        var result = new ArrayList<UUID>();
-        for (var candidate : activities.startingNear(userId, footprint.startedAt(), Duration.ofMinutes(5))) {
-            var other = new ActivityFootprint(
-                    candidate.startedAt(),
-                    candidate.elapsedSeconds(),
-                    candidate.distanceMeters() == null
-                            ? null
-                            : new Measurement(candidate.distanceMeters(), MetricProvenance.DEVICE_REPORTED),
-                    candidate.bbox() == null
-                            ? null
-                            : new BoundingBox(
-                                    candidate.bbox()[0],
-                                    candidate.bbox()[1],
-                                    candidate.bbox()[2],
-                                    candidate.bbox()[3]),
-                    "stored");
-            if (DuplicateHeuristic.isLikelyDuplicate(footprint, other)) {
-                result.add(candidate.activityId());
-            }
-        }
-        return result;
     }
 
     private ActivityMapper.Context context(ClaimedJob job, ImportedActivity activity) {

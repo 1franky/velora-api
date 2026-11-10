@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.7.0
+  version: 1.8.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -357,6 +357,33 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/ActivityLap' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/possible-duplicates:
+    parameters:
+      - in: path
+        name: activityId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Actividades que parecen la misma rodada
+      description: >
+        Mismo criterio que la advertencia POSSIBLE_DUPLICATE al importar (ADR-009, nivel 3): inicio a menos de 2
+        minutos, duración y distancia parecidas y recorridos que se cruzan. Sirve para resolver duplicados después de
+        importar (p. ej. la misma rodada en FIT, GPX y TCX). Solo informa; nunca descarta nada. Lista vacía si no hay.
+      operationId: getPossibleDuplicates
+      responses:
+        '200':
+          description: Posibles duplicados, del más antiguo al más reciente
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [items]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/ActivitySummary' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /activities/imports:
