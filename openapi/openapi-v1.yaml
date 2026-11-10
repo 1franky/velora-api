@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.8.0
+  version: 1.9.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -258,6 +258,26 @@ paths:
           content:
             application/json:
               schema: { $ref: '#/components/schemas/ActivityDetail' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    patch:
+      summary: Corregir título, tipo o bicicleta de una actividad
+      description: >
+        Solo se modifican los campos enviados; `bikeId: null` quita la bicicleta. Las métricas, el recorrido y el
+        archivo original no se editan (para recalcularlos, usar el reproceso). La bicicleta debe ser del usuario.
+      operationId: updateActivity
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/ActivityUpdate' }
+      responses:
+        '200':
+          description: Actividad actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityDetail' }
+        '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
     delete:
@@ -749,6 +769,18 @@ components:
             format: { type: string, enum: [FIT, GPX, TCX] }
             sizeBytes: { type: integer, minimum: 1 }
             importedAt: { type: string, format: date-time }
+    ActivityUpdate:
+      type: object
+      additionalProperties: false
+      minProperties: 1
+      description: Solo se modifican los campos enviados.
+      properties:
+        title: { type: string, minLength: 1, maxLength: 200 }
+        subType: { $ref: '#/components/schemas/ActivitySubType' }
+        bikeId:
+          type: [string, 'null']
+          format: uuid
+          description: Bicicleta del usuario; null la quita.
     StreamType:
       type: string
       enum: [TIME, LATITUDE, LONGITUDE, ALTITUDE, DISTANCE, SPEED, HEART_RATE, CADENCE, POWER, TEMPERATURE]
