@@ -5,9 +5,11 @@ import java.time.ZoneId;
 import java.util.Set;
 import java.util.UUID;
 import mx.velora.api.identity.AuthenticatedUser;
+import mx.velora.api.identity.UserTrackPrivacy;
 import mx.velora.api.identity.auth.AuthProblems.UnauthenticatedException;
 import mx.velora.api.identity.user.PreferencesProblems.EmptyPreferencesUpdateException;
 import mx.velora.api.identity.user.PreferencesProblems.InvalidTimeZoneException;
+import mx.velora.api.identity.user.PreferencesProblems.InvalidTrackPrivacyException;
 import mx.velora.api.identity.user.PreferencesProblems.UnsupportedUnitException;
 import org.jspecify.annotations.Nullable;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -27,11 +29,16 @@ class MeController {
 
     static final Set<String> ELEVATION_UNITS = Set.of("m");
 
-    record Preferences(String locale, String timeZone, String distanceUnit, String elevationUnit) {
+    record Preferences(
+            String locale, String timeZone, String distanceUnit, String elevationUnit, int trackPrivacyMeters) {
 
         static Preferences of(UserRepository.Profile profile) {
             return new Preferences(
-                    profile.locale(), profile.timeZone(), profile.distanceUnit(), profile.elevationUnit());
+                    profile.locale(),
+                    profile.timeZone(),
+                    profile.distanceUnit(),
+                    profile.elevationUnit(),
+                    profile.trackPrivacyMeters());
         }
     }
 
@@ -40,7 +47,8 @@ class MeController {
     record PreferencesUpdate(
             @Nullable String timeZone,
             @Nullable String distanceUnit,
-            @Nullable String elevationUnit) {}
+            @Nullable String elevationUnit,
+            @Nullable Integer trackPrivacyMeters) {}
 
     private final UserRepository users;
     private final Clock clock;
@@ -59,7 +67,10 @@ class MeController {
     @PatchMapping("/preferences")
     Preferences updatePreferences(
             @AuthenticationPrincipal AuthenticatedUser user, @RequestBody PreferencesUpdate update) {
-        if (update.timeZone() == null && update.distanceUnit() == null && update.elevationUnit() == null) {
+        if (update.timeZone() == null
+                && update.distanceUnit() == null
+                && update.elevationUnit() == null
+                && update.trackPrivacyMeters() == null) {
             throw new EmptyPreferencesUpdateException();
         }
         if (update.timeZone() != null && !isIanaZone(update.timeZone())) {
@@ -69,8 +80,17 @@ class MeController {
                 || (update.elevationUnit() != null && !ELEVATION_UNITS.contains(update.elevationUnit()))) {
             throw new UnsupportedUnitException();
         }
+        if (update.trackPrivacyMeters() != null
+                && !UserTrackPrivacy.ALLOWED_METERS.contains(update.trackPrivacyMeters())) {
+            throw new InvalidTrackPrivacyException();
+        }
         if (!users.updatePreferences(
-                user.userId(), update.timeZone(), update.distanceUnit(), update.elevationUnit(), clock.instant())) {
+                user.userId(),
+                update.timeZone(),
+                update.distanceUnit(),
+                update.elevationUnit(),
+                update.trackPrivacyMeters(),
+                clock.instant())) {
             throw new UnauthenticatedException();
         }
         return Preferences.of(profile(user));

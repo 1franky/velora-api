@@ -19,6 +19,7 @@ import java.util.UUID;
 import mx.velora.api.activity.ActivitySubType;
 import mx.velora.api.activity.ActivitySummary;
 import mx.velora.api.activity.StreamType;
+import mx.velora.api.activity.TrackPrivacy;
 import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
@@ -163,29 +164,55 @@ public class ActivityQueries {
                 .optional();
     }
 
-    /** Recorrido simplificado: geometría GeoJSON (6 decimales), recuadro y conteos. */
-    public record Track(String geometryJson, double[] bbox, int pointCount, int returnedPointCount) {}
+    /** Recorrido servido; {@code geometryJson} nulo si la privacidad oculta todo (rodada más corta que el recorte). */
+    public record Track(
+            @Nullable String geometryJson,
+            double @Nullable [] bbox,
+            int pointCount,
+            int returnedPointCount,
+            boolean trimmed) {}
 
-    /** {@code null} si la actividad no tiene recorrido (p. ej. rodillo). */
-    public Optional<Track> track(UUID activityId, double toleranceDegrees) {
+    /**
+     * Recorrido simplificado con la tolerancia indicada. Con {@code trim}, se recorta antes de simplificar y el
+     * recuadro se calcula sobre lo que queda: el original delataría el punto de salida (ADR-016).
+     */
+    public Optional<Track> track(UUID activityId, double toleranceDegrees, TrackPrivacy.@Nullable Trim trim) {
         return jdbc.sql("""
-                        WITH t AS (
-                            SELECT route_geom, point_count, ST_SimplifyPreserveTopology(route_geom, :tolerance) AS simple
-                            FROM activity_tracks WHERE activity_id = :id)
-                        SELECT ST_AsGeoJSON(simple, 6) AS geojson, ST_NPoints(simple) AS returned, point_count,
-                               ST_XMin(route_geom) AS west, ST_YMin(route_geom) AS south,
-                               ST_XMax(route_geom) AS east, ST_YMax(route_geom) AS north
+                        WITH r AS (
+                            SELECT CASE WHEN :trimmed THEN velora_trim_route(route_geom, :startM, :endM)
+                                        ELSE route_geom END AS g,
+                                   point_count
+                            FROM activity_tracks WHERE activity_id = :id),
+                        -- ST_Multi: simplificar un recorrido de una sola parte devuelve LineString, y el contrato
+                        -- promete MultiLineString.
+                        t AS (SELECT g, point_count, ST_Multi(ST_SimplifyPreserveTopology(g, :tolerance)) AS simple
+                              FROM r)
+                        SELECT ST_AsGeoJSON(simple, 6) AS geojson, coalesce(ST_NPoints(simple), 0) AS returned,
+                               point_count, ST_XMin(g) AS west, ST_YMin(g) AS south, ST_XMax(g) AS east,
+                               ST_YMax(g) AS north
                         FROM t
                         """)
+                .param("trimmed", trim != null)
+                .param("startM", trim == null ? 0.0 : trim.startMeters())
+                .param("endM", trim == null ? 0.0 : trim.endMeters())
                 .param("tolerance", toleranceDegrees)
                 .param("id", activityId)
-                .query((rs, n) -> new Track(
-                        rs.getString("geojson"),
-                        new double[] {
-                            rs.getDouble("west"), rs.getDouble("south"), rs.getDouble("east"), rs.getDouble("north")
-                        },
-                        rs.getInt("point_count"),
-                        rs.getInt("returned")))
+                .query((rs, n) -> {
+                    var geojson = rs.getString("geojson");
+                    return new Track(
+                            geojson,
+                            geojson == null
+                                    ? null
+                                    : new double[] {
+                                        rs.getDouble("west"),
+                                        rs.getDouble("south"),
+                                        rs.getDouble("east"),
+                                        rs.getDouble("north")
+                                    },
+                            rs.getInt("point_count"),
+                            rs.getInt("returned"),
+                            trim != null);
+                })
                 .optional();
     }
 

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.9.0
+  version: 1.10.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -341,7 +341,9 @@ paths:
       summary: Recorrido de la actividad como GeoJSON simplificado para un nivel de zoom
       description: >
         Un tramo por segmento (las pausas no se dibujan). La simplificación usa una tolerancia de aproximadamente
-        un píxel en el zoom pedido; el track original no se modifica. Solo para el propietario.
+        un píxel en el zoom pedido; el track original no se modifica. Solo para el propietario. Con privacidad de
+        inicio y fin activa se recorta antes de simplificar (ADR-016); si la rodada es más corta que lo que se
+        oculta, responde 404 con un detalle que lo explica.
       operationId: getActivityTrack
       parameters:
         - in: query
@@ -580,7 +582,7 @@ components:
         preferences: { $ref: '#/components/schemas/Preferences' }
     Preferences:
       type: object
-      required: [locale, timeZone, distanceUnit, elevationUnit]
+      required: [locale, timeZone, distanceUnit, elevationUnit, trackPrivacyMeters]
       properties:
         locale:
           type: string
@@ -594,6 +596,15 @@ components:
         elevationUnit:
           type: string
           enum: [m]
+        trackPrivacyMeters:
+          $ref: '#/components/schemas/TrackPrivacyMeters'
+    TrackPrivacyMeters:
+      type: integer
+      enum: [0, 200, 300, 500, 1000]
+      description: >
+        Metros que se ocultan al inicio y al final de cada recorrido (ADR-016), medidos sobre el camino con una
+        variación estable de ±30 % por actividad; 0 la desactiva (por defecto). Se aplica en el servidor a los
+        recorridos, a las posiciones de las series y a los derivados geoespaciales.
     PreferencesUpdate:
       type: object
       additionalProperties: false
@@ -603,6 +614,7 @@ components:
         timeZone: { type: string, minLength: 1, maxLength: 64 }
         distanceUnit: { type: string, enum: [km] }
         elevationUnit: { type: string, enum: [m] }
+        trackPrivacyMeters: { $ref: '#/components/schemas/TrackPrivacyMeters' }
     BikeType:
       type: string
       enum: [MTB, ROAD, GRAVEL, OTHER]
@@ -793,7 +805,8 @@ components:
           type: object
           description: >
             Una serie por tipo, todas de longitud sampleCount; null donde no hay dato. TIME en milisegundos desde
-            startedAt; unidades SI (m, m/s, °C) y grados WGS84.
+            startedAt; unidades SI (m, m/s, °C) y grados WGS84. Con privacidad de inicio y fin activa, LATITUDE y
+            LONGITUDE son null en los tramos ocultos (ADR-016).
           additionalProperties:
             type: array
             items: { type: [number, 'null'] }
@@ -825,12 +838,17 @@ components:
                   items: { type: number }
         properties:
           type: object
-          required: [activityId, pointCount, returnedPointCount, zoom]
+          required: [activityId, pointCount, returnedPointCount, zoom, trimmed]
           properties:
             activityId: { type: string, format: uuid }
             pointCount: { type: integer, minimum: 2, description: Puntos del track original. }
             returnedPointCount: { type: integer, minimum: 2 }
             zoom: { type: integer }
+            trimmed:
+              type: boolean
+              description: >
+                El inicio y el fin están ocultos por la privacidad (ADR-016); el recuadro corresponde a lo visible.
+                Las distancias ocultas no se informan.
     ActivityLap:
       type: object
       required: [lapNumber, startedAt, elapsedTimeSeconds, timerTimeSeconds, distanceMeters, averageSpeedMps,

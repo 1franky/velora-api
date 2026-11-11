@@ -29,11 +29,17 @@ public class UserRepository {
 
     /** Perfil y preferencias. */
     public record Profile(
-            UUID id, String email, String locale, String timeZone, String distanceUnit, String elevationUnit) {}
+            UUID id,
+            String email,
+            String locale,
+            String timeZone,
+            String distanceUnit,
+            String elevationUnit,
+            int trackPrivacyMeters) {}
 
     public Optional<Profile> findProfile(UUID id) {
         return jdbc.sql("""
-                        SELECT id, email, locale, time_zone, distance_unit, elevation_unit
+                        SELECT id, email, locale, time_zone, distance_unit, elevation_unit, track_privacy_meters
                         FROM users WHERE id = :id
                         """)
                 .param("id", id)
@@ -43,7 +49,8 @@ public class UserRepository {
                         rs.getString("locale"),
                         rs.getString("time_zone"),
                         rs.getString("distance_unit"),
-                        rs.getString("elevation_unit")))
+                        rs.getString("elevation_unit"),
+                        rs.getInt("track_privacy_meters")))
                 .optional();
     }
 
@@ -53,18 +60,21 @@ public class UserRepository {
             @Nullable String timeZone,
             @Nullable String distanceUnit,
             @Nullable String elevationUnit,
+            @Nullable Integer trackPrivacyMeters,
             Instant now) {
         return jdbc.sql("""
                                 UPDATE users SET
                                     time_zone = coalesce(:timeZone, time_zone),
                                     distance_unit = coalesce(:distanceUnit, distance_unit),
                                     elevation_unit = coalesce(:elevationUnit, elevation_unit),
+                                    track_privacy_meters = coalesce(:privacy, track_privacy_meters),
                                     updated_at = :now
                                 WHERE id = :id
                                 """)
                         .param("timeZone", timeZone, java.sql.Types.VARCHAR)
                         .param("distanceUnit", distanceUnit, java.sql.Types.VARCHAR)
                         .param("elevationUnit", elevationUnit, java.sql.Types.VARCHAR)
+                        .param("privacy", trackPrivacyMeters, java.sql.Types.INTEGER)
                         .param("now", java.sql.Timestamp.from(now))
                         .param("id", id)
                         .update()

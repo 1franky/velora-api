@@ -25,11 +25,13 @@ import mx.velora.api.activity.ActivityEditing;
 import mx.velora.api.activity.ActivitySubType;
 import mx.velora.api.activity.ActivitySummary;
 import mx.velora.api.activity.StreamType;
+import mx.velora.api.activity.TrackPrivacy;
 import mx.velora.api.activity.persistence.ActivityQueries;
 import mx.velora.api.activity.persistence.ActivityQueries.Filter;
 import mx.velora.api.activity.persistence.ActivityQueries.Position;
 import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.AuthenticatedUser;
+import mx.velora.api.identity.UserTrackPrivacy;
 import org.jspecify.annotations.Nullable;
 import org.springframework.http.HttpStatus;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
@@ -78,7 +80,7 @@ class ActivityController {
 
     record Laps(List<ActivityQueries.Lap> items) {}
 
-    record TrackProperties(UUID activityId, int pointCount, int returnedPointCount, int zoom) {}
+    record TrackProperties(UUID activityId, int pointCount, int returnedPointCount, int zoom, boolean trimmed) {}
 
     record TrackFeature(
             String type, double[] bbox, @JsonRawValue String geometry, TrackProperties properties) {}
@@ -91,6 +93,7 @@ class ActivityController {
     private final ActivityDeletion deletion;
     private final ActivityEditing editing;
     private final CatalogLookup catalog;
+    private final UserTrackPrivacy privacy;
     private final Clock clock;
 
     ActivityController(
@@ -98,11 +101,13 @@ class ActivityController {
             ActivityDeletion deletion,
             ActivityEditing editing,
             CatalogLookup catalog,
+            UserTrackPrivacy privacy,
             Clock clock) {
         this.queries = queries;
         this.deletion = deletion;
         this.editing = editing;
         this.catalog = catalog;
+        this.privacy = privacy;
         this.clock = clock;
     }
 
@@ -238,8 +243,29 @@ class ActivityController {
             @PathVariable UUID activityId,
             @RequestParam(required = false) @Nullable String types) {
         requireOwned(user, activityId);
-        var streams = queries.streams(activityId, parseTypes(types));
-        return new StreamsResponse(streams.sampleCount(), streams.values());
+        var requested = parseTypes(types);
+        var trim = trimFor(user, activityId);
+        var asksPosition = requested == null
+                || requested.contains(StreamType.LATITUDE)
+                || requested.contains(StreamType.LONGITUDE);
+        // Para enmascarar se necesitan ambas coordenadas aunque solo se pida una (ADR-016).
+        var toRead = requested;
+        if (trim != null && asksPosition && requested != null) {
+            toRead = EnumSet.copyOf(requested);
+            toRead.add(StreamType.LATITUDE);
+            toRead.add(StreamType.LONGITUDE);
+        }
+        var streams = queries.streams(activityId, toRead);
+        var values = streams.values();
+        var lat = values.get(StreamType.LATITUDE);
+        var lon = values.get(StreamType.LONGITUDE);
+        if (trim != null && lat != null && lon != null) {
+            TrackPrivacy.maskPositions(lat, lon, trim);
+        }
+        if (requested != null) {
+            values.keySet().retainAll(requested);
+        }
+        return new StreamsResponse(streams.sampleCount(), values);
     }
 
     /**
@@ -256,12 +282,16 @@ class ActivityController {
         }
         requireOwned(user, activityId);
         var toleranceDegrees = METERS_PER_PIXEL_ZOOM_0 / Math.pow(2, zoom) / METERS_PER_DEGREE;
-        var track = queries.track(activityId, toleranceDegrees).orElseThrow(TrackNotFoundException::new);
+        var track = queries.track(activityId, toleranceDegrees, trimFor(user, activityId))
+                .orElseThrow(TrackNotFoundException::new);
+        if (track.geometryJson() == null || track.bbox() == null) {
+            throw new TrackHiddenException();
+        }
         return new TrackFeature(
                 "Feature",
                 track.bbox(),
                 track.geometryJson(),
-                new TrackProperties(activityId, track.pointCount(), track.returnedPointCount(), zoom));
+                new TrackProperties(activityId, track.pointCount(), track.returnedPointCount(), zoom, track.trimmed()));
     }
 
     @GetMapping("/{activityId}/laps")
@@ -276,6 +306,12 @@ class ActivityController {
         if (!deletion.delete(user.userId(), activityId)) {
             throw new ActivityNotFoundException();
         }
+    }
+
+    /** Distancias a ocultar según la preferencia del usuario; {@code null} si está desactivada (ADR-016). */
+    private TrackPrivacy.@Nullable Trim trimFor(AuthenticatedUser user, UUID activityId) {
+        return TrackPrivacy.forActivity(activityId, privacy.metersFor(user.userId()))
+                .orElse(null);
     }
 
     private void requireOwned(AuthenticatedUser user, UUID activityId) {
@@ -356,6 +392,13 @@ class ActivityController {
     static final class InvalidActivityQueryException extends ErrorResponseException {
         InvalidActivityQueryException() {
             super(HttpStatus.BAD_REQUEST);
+        }
+    }
+
+    /** La rodada es más corta que lo que la privacidad de inicio y fin oculta. */
+    static final class TrackHiddenException extends ErrorResponseException {
+        TrackHiddenException() {
+            super(HttpStatus.NOT_FOUND);
         }
     }
 
