@@ -15,8 +15,8 @@ import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
 
 /**
- * Totales de actividades por fecha deportiva local, calculados al vuelo. Sirve al dashboard mientras no existan los
- * agregados precalculados de la Fase 5.
+ * Totales de actividades por fecha deportiva local, calculados al vuelo. Cuentan una sola rodada de cada grupo de
+ * posibles duplicados ({@code counted_activities}, ADR-020), igual que Rendimiento; incluyen el rodillo.
  */
 @Service
 public class ActivityStatistics {
@@ -42,7 +42,7 @@ public class ActivityStatistics {
         var sql = new StringBuilder("""
                 SELECT count(*) AS n, coalesce(sum(distance_meters), 0) AS distance,
                        coalesce(sum(moving_time_seconds), 0) AS moving, coalesce(sum(elevation_gain_meters), 0) AS gain
-                FROM activities WHERE user_id = :user""");
+                FROM counted_activities WHERE user_id = :user""");
         var params = new HashMap<String, Object>();
         params.put("user", userId);
         if (from != null) {
@@ -70,7 +70,7 @@ public class ActivityStatistics {
                         SELECT to_char(local_start_date, 'YYYY-MM') AS month, count(*) AS n,
                                coalesce(sum(distance_meters), 0) AS distance, coalesce(sum(moving_time_seconds), 0) AS moving,
                                coalesce(sum(elevation_gain_meters), 0) AS gain
-                        FROM activities
+                        FROM counted_activities
                         WHERE user_id = :user AND local_start_date >= :from AND local_start_date <= :to
                         GROUP BY 1
                         """)
