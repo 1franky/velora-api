@@ -45,7 +45,7 @@ class NewTerritoryQueries {
     /**
      * Muestras en orden. Una muestra es nueva si ninguna rodada que empezó antes pasa a menos de
      * {@code toleranceMeters}. El índice GiST deja solo las rodadas cuyo recuadro toca el de esta, y la distancia se mide
-     * en metros sobre la zona UTM del recorrido.
+     * en metros planos con una escala local (equirectangular) en la latitud del recorrido.
      */
     List<NewTerritory.Sample> samples(UUID activityId, int privacyMeters, double toleranceMeters) {
         return jdbc.sql("""
@@ -56,15 +56,18 @@ class NewTerritoryQueries {
                                                                :privacy * velora_privacy_factor(a.id, true),
                                                                :privacy * velora_privacy_factor(a.id, false))
                                         ELSE t.route_geom END AS g,
-                                   -- Zona UTM del centro del recorrido: distancias planas en metros, mucho más
-                                   -- rápidas que sobre el geoide y con error despreciable a escala de una rodada.
-                                   CASE WHEN ST_Y(ST_Centroid(t.bbox)) >= 0 THEN 32600 ELSE 32700 END
-                                       + least(60, floor((ST_X(ST_Centroid(t.bbox)) + 180) / 6)::int + 1) AS srid
+                                   radians(ST_Y(ST_Centroid(t.bbox))) AS phi
                             FROM activities a JOIN activity_tracks t ON t.activity_id = a.id
                             WHERE a.id = :id),
+                        -- Metros por grado en la latitud del recorrido: escala equirectangular local. Sin PROJ (lento
+                        -- la primera vez en cada conexión) y con error despreciable a la escala de una rodada.
+                        scale AS (
+                            SELECT 111412.84 * cos(phi) - 93.5 * cos(3 * phi) AS kx,
+                                   111132.954 - 559.822 * cos(2 * phi) + 1.175 * cos(4 * phi) AS ky
+                            FROM me),
                         earlier AS MATERIALIZED (
-                            SELECT ST_Transform(ot.route_geom, me.srid) AS g
-                            FROM activities o JOIN activity_tracks ot ON ot.activity_id = o.id, me
+                            SELECT ST_Scale(ot.route_geom, scale.kx, scale.ky) AS g
+                            FROM activities o JOIN activity_tracks ot ON ot.activity_id = o.id, me, scale
                             WHERE o.user_id = me.user_id AND o.started_at < me.started_at AND me.g IS NOT NULL
                               AND ot.route_geom && ST_Expand(me.g, :margin)),
                         parts AS (
@@ -75,8 +78,8 @@ class NewTerritoryQueries {
                             FROM (SELECT part, ST_DumpPoints(ST_Segmentize(line::geography, :spacing)::geometry) AS dp
                                   FROM parts) s),
                         flagged AS (
-                            SELECT pt.part, pt.idx, pt.p, ST_Transform(pt.p, me.srid) AS m
-                            FROM points pt, me)
+                            SELECT pt.part, pt.idx, pt.p, ST_Scale(pt.p, scale.kx, scale.ky) AS m
+                            FROM points pt, scale)
                         SELECT part, ST_Y(p) AS lat, ST_X(p) AS lon,
                                NOT EXISTS (SELECT 1 FROM earlier e WHERE ST_DWithin(e.g, m, :tolerance)) AS fresh,
                                (NOT EXISTS (SELECT 1 FROM earlier e WHERE ST_DWithin(e.g, m, :tolerance))
