@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.12.0
+  version: 1.13.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -598,6 +598,32 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/LargestSquare' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /geo/new-territory:
+    get:
+      summary: Tramos de una actividad recorridos por primera vez
+      operationId: getNewTerritory
+      description: >
+        Compara el recorrido de la actividad (recortado por la privacidad de inicio y fin) con las rodadas del mismo
+        usuario que empezaron antes (ADR-019). Un punto es nuevo si ninguna pasa a menos de `toleranceMeters`; los
+        tramos nuevos de menos de `minStretchMeters` se cuentan como conocidos (desplazamiento del GPS). `confidence`
+        baja con GPS escaso o cuando lo nuevo corre pegado a caminos conocidos (paralelos o GPS desviado).
+      parameters:
+        - in: query
+          name: activityId
+          required: true
+          schema: { type: string, format: uuid }
+        - in: query
+          name: toleranceMeters
+          schema: { type: number, minimum: 10, maximum: 100, default: 25 }
+      responses:
+        '200':
+          description: Caminos nuevos
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/NewTerritory' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
 components:
   securitySchemes:
     bearerAuth:
@@ -1086,3 +1112,41 @@ components:
           minItems: 4
           maxItems: 4
           items: { type: number }
+    NewTerritory:
+      type: object
+      additionalProperties: false
+      required: [activityId, algorithmVersion, toleranceMeters, minStretchMeters, comparedActivities, firstActivity,
+                 trimmed, analyzedDistanceMeters, newDistanceMeters, newFraction, confidence, geometry]
+      properties:
+        activityId: { type: string, format: uuid }
+        algorithmVersion: { type: string, examples: ['new-territory/1'] }
+        toleranceMeters: { type: number }
+        minStretchMeters: { type: number }
+        comparedActivities:
+          type: integer
+          minimum: 0
+          description: Rodadas con recorrido que empezaron antes que esta.
+        firstActivity: { type: boolean, description: 'Sin rodadas anteriores: todo es nuevo.' }
+        trimmed: { type: boolean, description: Se analizó el recorrido recortado por la privacidad. }
+        analyzedDistanceMeters: { type: number, minimum: 0 }
+        newDistanceMeters: { type: number, minimum: 0 }
+        newFraction: { type: number, minimum: 0, maximum: 1 }
+        confidence: { type: string, enum: [HIGH, MEDIUM, LOW] }
+        geometry:
+          description: Tramos nuevos (MultiLineString GeoJSON, WGS 84) o null si no hay.
+          oneOf:
+            - type: 'null'
+            - type: object
+              required: [type, coordinates]
+              properties:
+                type: { type: string, const: MultiLineString }
+                coordinates:
+                  type: array
+                  items:
+                    type: array
+                    minItems: 2
+                    items:
+                      type: array
+                      minItems: 2
+                      maxItems: 2
+                      items: { type: number }
