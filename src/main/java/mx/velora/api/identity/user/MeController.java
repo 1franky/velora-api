@@ -9,6 +9,7 @@ import mx.velora.api.identity.TrackPrivacyChanged;
 import mx.velora.api.identity.UserTrackPrivacy;
 import mx.velora.api.identity.auth.AuthProblems.UnauthenticatedException;
 import mx.velora.api.identity.user.PreferencesProblems.EmptyPreferencesUpdateException;
+import mx.velora.api.identity.user.PreferencesProblems.InvalidMaxHeartRateException;
 import mx.velora.api.identity.user.PreferencesProblems.InvalidTimeZoneException;
 import mx.velora.api.identity.user.PreferencesProblems.InvalidTrackPrivacyException;
 import mx.velora.api.identity.user.PreferencesProblems.UnsupportedUnitException;
@@ -32,8 +33,18 @@ class MeController {
 
     static final Set<String> ELEVATION_UNITS = Set.of("m");
 
+    /** FC máxima admitida; 0 en una actualización la borra. */
+    static final int MIN_MAX_HEART_RATE = 100;
+
+    static final int MAX_MAX_HEART_RATE = 230;
+
     record Preferences(
-            String locale, String timeZone, String distanceUnit, String elevationUnit, int trackPrivacyMeters) {
+            String locale,
+            String timeZone,
+            String distanceUnit,
+            String elevationUnit,
+            int trackPrivacyMeters,
+            @Nullable Integer maxHeartRateBpm) {
 
         static Preferences of(UserRepository.Profile profile) {
             return new Preferences(
@@ -41,7 +52,8 @@ class MeController {
                     profile.timeZone(),
                     profile.distanceUnit(),
                     profile.elevationUnit(),
-                    profile.trackPrivacyMeters());
+                    profile.trackPrivacyMeters(),
+                    profile.maxHeartRateBpm());
         }
     }
 
@@ -51,7 +63,8 @@ class MeController {
             @Nullable String timeZone,
             @Nullable String distanceUnit,
             @Nullable String elevationUnit,
-            @Nullable Integer trackPrivacyMeters) {}
+            @Nullable Integer trackPrivacyMeters,
+            @Nullable Integer maxHeartRateBpm) {}
 
     private final UserRepository users;
     private final Clock clock;
@@ -76,7 +89,8 @@ class MeController {
         if (update.timeZone() == null
                 && update.distanceUnit() == null
                 && update.elevationUnit() == null
-                && update.trackPrivacyMeters() == null) {
+                && update.trackPrivacyMeters() == null
+                && update.maxHeartRateBpm() == null) {
             throw new EmptyPreferencesUpdateException();
         }
         if (update.timeZone() != null && !isIanaZone(update.timeZone())) {
@@ -90,6 +104,11 @@ class MeController {
                 && !UserTrackPrivacy.ALLOWED_METERS.contains(update.trackPrivacyMeters())) {
             throw new InvalidTrackPrivacyException();
         }
+        if (update.maxHeartRateBpm() != null
+                && update.maxHeartRateBpm() != 0
+                && (update.maxHeartRateBpm() < MIN_MAX_HEART_RATE || update.maxHeartRateBpm() > MAX_MAX_HEART_RATE)) {
+            throw new InvalidMaxHeartRateException();
+        }
         var previousPrivacy = profile(user).trackPrivacyMeters();
         if (!users.updatePreferences(
                 user.userId(),
@@ -97,6 +116,7 @@ class MeController {
                 update.distanceUnit(),
                 update.elevationUnit(),
                 update.trackPrivacyMeters(),
+                update.maxHeartRateBpm(),
                 clock.instant())) {
             throw new UnauthenticatedException();
         }
