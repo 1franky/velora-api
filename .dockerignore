@@ -1,0 +1,14 @@
+.git
+.github
+.gradle
+.idea
+build
+data
+uploads
+docs
+openapi
+.env
+.env.*
+*.fit
+*.gpx
+*.tcx

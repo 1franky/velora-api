@@ -1,0 +1,49 @@
+name: Deploy a VPS
+
+# Se dispara cuando el workflow "CI" (ci.yml) termina con éxito en main, para nunca desplegar código que no
+# compiló o no pasó las pruebas. "workflow_dispatch" agrega un botón "Run workflow" para redesplegar sin commit.
+# Mismo esquema que nexora-api.
+on:
+  workflow_run:
+    workflows: ["CI"]
+    branches: [main]
+    types:
+      - completed
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+
+# Un despliegue a la vez; si llega otro, espera a que termine el anterior.
+concurrency:
+  group: deploy-vps
+  cancel-in-progress: false
+
+jobs:
+  deploy:
+    # Solo un CI exitoso de un push a main de este mismo repositorio (el repo es público: un PR desde un fork
+    # con una rama llamada "main" también cumple el filtro "branches" de workflow_run).
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' || (
+        github.event.workflow_run.conclusion == 'success' &&
+        github.event.workflow_run.event == 'push' &&
+        github.event.workflow_run.head_repository.full_name == github.repository ) }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Desplegar por SSH
+        uses: appleboy/ssh-action@v1.2.0
+        with:
+          host: ${{ secrets.VPS_HOST }}
+          username: ubuntu
+          key: ${{ secrets.VPS_DEPLOY_KEY }}
+          # -H (no -i): con "sudo -i <comando>" sudo reconstruye el argv como un solo string y se pierden las
+          # comillas del script multilínea (mismo fix que nexora-api). -H fija $HOME del usuario para git/docker.
+          script: |
+            sudo -H -u francisco bash -c '
+              set -e
+              cd /home/francisco/docker/velora/velora-api
+              git pull --ff-only origin main
+              docker network inspect velora-net >/dev/null 2>&1 || docker network create velora-net
+              docker compose -f compose.deploy.yaml up --build -d
+              docker image prune -f
+            '

@@ -1,0 +1,70 @@
+# Despliegue en el VPS: API + PostgreSQL/PostGIS. `compose.yaml` se mantiene solo para desarrollo local.
+#
+#   docker compose -f compose.deploy.yaml up --build -d
+#
+# Clientes de la API:
+#   - velora-web (servidor de Next.js, ADR-014): por la red Docker compartida "velora-net".
+#   - velora-android: por internet. La API se publica solo en 127.0.0.1:${VELORA_API_HOST_PORT:-3008} y el
+#     acceso público entra por el túnel de Cloudflare con HTTPS.
+# PostgreSQL no publica ningún puerto. La red velora-net es externa para que la usen los dos proyectos; se
+# crea una sola vez con:  docker network create velora-net
+#
+# Variables en `.env` (no versionado; ver `.env.example`): VELORA_DB_PASSWORD es obligatoria.
+name: velora-api
+
+services:
+  api:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    image: velora-api:latest
+    container_name: velora-api
+    restart: unless-stopped
+    environment:
+      VELORA_DB_URL: jdbc:postgresql://postgres:5432/${VELORA_DB_NAME:-velora}
+      VELORA_DB_USERNAME: ${VELORA_DB_USERNAME:-velora}
+      VELORA_DB_PASSWORD: ${VELORA_DB_PASSWORD:?Define VELORA_DB_PASSWORD en .env}
+      VELORA_API_PORT: 8080
+      VELORA_STORAGE_ORIGINALS_PATH: /data/originals
+    ports:
+      - "127.0.0.1:${VELORA_API_HOST_PORT:-3008}:8080"
+    volumes:
+      - velora-originals:/data/originals
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - velora-net
+
+  postgres:
+    # postgis/postgis no publica imagen arm64 (el VPS es aarch64): ver docker/postgis/Dockerfile.
+    build:
+      context: docker/postgis
+    image: velora-postgis:18-3.7
+    container_name: velora-postgres
+    restart: unless-stopped
+    environment:
+      POSTGRES_DB: ${VELORA_DB_NAME:-velora}
+      POSTGRES_USER: ${VELORA_DB_USERNAME:-velora}
+      POSTGRES_PASSWORD: ${VELORA_DB_PASSWORD:?Define VELORA_DB_PASSWORD en .env}
+    # Sin "ports": solo visible dentro de velora-net.
+    volumes:
+      - velora-postgres-data:/var/lib/postgresql
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+    networks:
+      - velora-net
+
+networks:
+  velora-net:
+    external: true
+
+volumes:
+  # Nombres fijos: incluir ambos en los respaldos (ADR-013 para los originales).
+  velora-postgres-data:
+    name: velora-postgres-data
+  velora-originals:
+    name: velora-originals
