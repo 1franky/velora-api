@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.15.0
+  version: 1.16.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -379,6 +379,28 @@ paths:
                   items:
                     type: array
                     items: { $ref: '#/components/schemas/ActivityLap' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /activities/{activityId}/climbs:
+    get:
+      summary: Subidas y distribución de pendientes de una actividad
+      operationId: getActivityClimbs
+      description: >
+        Detectadas con la altitud remuestreada cada 20 m y suavizada en 100 m (`climbs/1`): una subida cuenta si sube
+        al menos 25 m en al menos 300 m con pendiente media de 3 % o más; un descenso de menos del 10 % de lo subido
+        (entre 10 y 30 m) no la corta. `available` es false sin altitud o sin distancia. Solo distancias y altitudes:
+        no incluye posiciones.
+      parameters:
+        - in: path
+          name: activityId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Subidas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ActivityClimbs' }
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
   /activities/{activityId}/possible-duplicates:
@@ -1338,3 +1360,38 @@ components:
         daysWithRides: { type: integer, minimum: 0 }
         overall: { $ref: '#/components/schemas/EddingtonValue' }
         thisYear: { $ref: '#/components/schemas/EddingtonValue' }
+    ActivityClimbs:
+      type: object
+      additionalProperties: false
+      required: [activityId, algorithmVersion, available, climbs, gradeDistribution]
+      properties:
+        activityId: { type: string, format: uuid }
+        algorithmVersion: { type: string, examples: ['climbs/1'] }
+        available: { type: boolean }
+        climbs:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [startDistanceMeters, endDistanceMeters, lengthMeters, startAltitudeMeters, endAltitudeMeters,
+                       elevationGainMeters, averageGradePercent, maxGradePercent]
+            properties:
+              startDistanceMeters: { type: number }
+              endDistanceMeters: { type: number }
+              lengthMeters: { type: number }
+              startAltitudeMeters: { type: number }
+              endAltitudeMeters: { type: number }
+              elevationGainMeters: { type: number }
+              averageGradePercent: { type: number }
+              maxGradePercent: { type: number, description: Pendiente máxima sostenida en 100 m. }
+        gradeDistribution:
+          type: array
+          description: Metros por rango de pendiente; `fromPercent`/`toPercent` nulos en los extremos abiertos.
+          items:
+            type: object
+            additionalProperties: false
+            required: [fromPercent, toPercent, distanceMeters]
+            properties:
+              fromPercent: { type: ['number', 'null'] }
+              toPercent: { type: ['number', 'null'] }
+              distanceMeters: { type: number, minimum: 0 }

@@ -24,6 +24,7 @@ import mx.velora.api.activity.ActivityDeletion;
 import mx.velora.api.activity.ActivityEditing;
 import mx.velora.api.activity.ActivitySubType;
 import mx.velora.api.activity.ActivitySummary;
+import mx.velora.api.activity.Climbs;
 import mx.velora.api.activity.StreamType;
 import mx.velora.api.activity.TrackPrivacy;
 import mx.velora.api.activity.persistence.ActivityQueries;
@@ -292,6 +293,37 @@ class ActivityController {
                 track.bbox(),
                 track.geometryJson(),
                 new TrackProperties(activityId, track.pointCount(), track.returnedPointCount(), zoom, track.trimmed()));
+    }
+
+    record ClimbsResponse(
+            UUID activityId,
+            String algorithmVersion,
+            boolean available,
+            List<Climbs.Climb> climbs,
+            List<Climbs.GradeBin> gradeDistribution) {}
+
+    /**
+     * Subidas y distribución de pendientes (§7). {@code available = false} sin altitud o sin distancia (p. ej. rodillo
+     * sin GPS). Las posiciones no salen de aquí: solo distancias y altitudes, así que la privacidad no aplica.
+     */
+    @GetMapping("/{activityId}/climbs")
+    ClimbsResponse climbs(@AuthenticationPrincipal AuthenticatedUser user, @PathVariable UUID activityId) {
+        requireOwned(user, activityId);
+        var streams = queries.streams(
+                        activityId,
+                        EnumSet.of(StreamType.ALTITUDE, StreamType.DISTANCE, StreamType.LATITUDE, StreamType.LONGITUDE))
+                .values();
+        var altitude = streams.get(StreamType.ALTITUDE);
+        var distance = streams.get(StreamType.DISTANCE);
+        if (distance == null && streams.get(StreamType.LATITUDE) != null && streams.get(StreamType.LONGITUDE) != null) {
+            distance =
+                    Climbs.distanceFromPositions(streams.get(StreamType.LATITUDE), streams.get(StreamType.LONGITUDE));
+        }
+        if (altitude == null || distance == null) {
+            return new ClimbsResponse(activityId, Climbs.ALGORITHM_VERSION, false, List.of(), List.of());
+        }
+        var result = Climbs.of(distance, altitude);
+        return new ClimbsResponse(activityId, Climbs.ALGORITHM_VERSION, true, result.climbs(), result.grades());
     }
 
     @GetMapping("/{activityId}/laps")
