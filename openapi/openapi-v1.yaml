@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.10.0
+  version: 1.11.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -491,22 +491,61 @@ paths:
               schema: { $ref: '#/components/schemas/DashboardSummary' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
-  /geo/heatmap:
+  /geo/heatmap/{z}/{x}/{y}:
     get:
-      summary: Obtener heatmap del usuario
+      summary: Tesela vectorial del mapa de calor personal
+      operationId: getHeatmapTile
+      description: >
+        Tesela Mapbox Vector Tile (XYZ, Web Mercator, extent 4096) con una capa `recorridos`: una línea por actividad
+        con recorrido, sin propiedades. El cliente las dibuja translúcidas y la intensidad sale de cuántas se enciman.
+        Los recorridos llegan recortados según la privacidad de inicio y fin del usuario (igual que en
+        `/activities/{activityId}/track`) y simplificados a medio píxel de la tesela. Una tesela sin recorridos
+        responde 204. Respuesta privada con ETag: con `If-None-Match` y sin cambios, 304.
       parameters:
+        - in: path
+          name: z
+          required: true
+          description: Zoom; más allá de 16 el cliente amplía la tesela del 16.
+          schema: { type: integer, minimum: 0, maximum: 16 }
+        - in: path
+          name: x
+          required: true
+          description: Columna, de 0 a 2^z - 1.
+          schema: { type: integer, minimum: 0 }
+        - in: path
+          name: y
+          required: true
+          description: Fila, de 0 a 2^z - 1 (origen arriba a la izquierda).
+          schema: { type: integer, minimum: 0 }
         - in: query
           name: from
+          description: Fecha deportiva local inicial (incluida).
           schema: { type: string, format: date }
         - in: query
           name: to
+          description: Fecha deportiva local final (incluida).
           schema: { type: string, format: date }
         - in: query
-          name: bbox
-          schema: { type: string, description: 'west,south,east,north' }
+          name: bikeId
+          schema: { type: string, format: uuid }
+        - in: query
+          name: subType
+          schema: { $ref: '#/components/schemas/ActivitySubType' }
       responses:
         '200':
-          description: Features geoespaciales del viewport
+          description: Tesela con al menos un recorrido
+          headers:
+            ETag:
+              schema: { type: string }
+          content:
+            application/vnd.mapbox-vector-tile:
+              schema: { type: string, format: binary }
+        '204':
+          description: No hay recorridos en esta tesela
+        '304':
+          description: La tesela no cambió desde el ETag enviado en `If-None-Match`
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 components:
   securitySchemes:
     bearerAuth:
