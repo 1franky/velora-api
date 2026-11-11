@@ -35,11 +35,13 @@ public class UserRepository {
             String timeZone,
             String distanceUnit,
             String elevationUnit,
-            int trackPrivacyMeters) {}
+            int trackPrivacyMeters,
+            @Nullable Integer maxHeartRateBpm) {}
 
     public Optional<Profile> findProfile(UUID id) {
         return jdbc.sql("""
-                        SELECT id, email, locale, time_zone, distance_unit, elevation_unit, track_privacy_meters
+                        SELECT id, email, locale, time_zone, distance_unit, elevation_unit, track_privacy_meters,
+                               max_heart_rate_bpm
                         FROM users WHERE id = :id
                         """)
                 .param("id", id)
@@ -50,7 +52,8 @@ public class UserRepository {
                         rs.getString("time_zone"),
                         rs.getString("distance_unit"),
                         rs.getString("elevation_unit"),
-                        rs.getInt("track_privacy_meters")))
+                        rs.getInt("track_privacy_meters"),
+                        (Integer) rs.getObject("max_heart_rate_bpm", Integer.class)))
                 .optional();
     }
 
@@ -61,6 +64,7 @@ public class UserRepository {
             @Nullable String distanceUnit,
             @Nullable String elevationUnit,
             @Nullable Integer trackPrivacyMeters,
+            @Nullable Integer maxHeartRateBpm,
             Instant now) {
         return jdbc.sql("""
                                 UPDATE users SET
@@ -68,6 +72,9 @@ public class UserRepository {
                                     distance_unit = coalesce(:distanceUnit, distance_unit),
                                     elevation_unit = coalesce(:elevationUnit, elevation_unit),
                                     track_privacy_meters = coalesce(:privacy, track_privacy_meters),
+                                    -- 0 la borra; sin valor, se conserva.
+                                    max_heart_rate_bpm = CASE WHEN CAST(:maxHr AS integer) IS NULL THEN max_heart_rate_bpm
+                                                              WHEN :maxHr = 0 THEN NULL ELSE :maxHr END,
                                     updated_at = :now
                                 WHERE id = :id
                                 """)
@@ -75,6 +82,7 @@ public class UserRepository {
                         .param("distanceUnit", distanceUnit, java.sql.Types.VARCHAR)
                         .param("elevationUnit", elevationUnit, java.sql.Types.VARCHAR)
                         .param("privacy", trackPrivacyMeters, java.sql.Types.INTEGER)
+                        .param("maxHr", maxHeartRateBpm, java.sql.Types.INTEGER)
                         .param("now", java.sql.Timestamp.from(now))
                         .param("id", id)
                         .update()

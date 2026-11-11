@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.16.0
+  version: 1.17.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -730,6 +730,37 @@ paths:
               schema: { $ref: '#/components/schemas/Eddington' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /analytics/heart-rate:
+    get:
+      summary: Tiempo en zonas cardiacas
+      operationId: getHeartRateZones
+      description: >
+        Tiempo en cada zona por porcentaje de la FC máxima del usuario (`hr-zones/1`, ADR-020): Z1 50–60 %, Z2 60–70 %,
+        Z3 70–80 %, Z4 80–90 %, Z5 90 % o más; `belowZonesSeconds` es el tiempo por debajo del 50 %. Cada muestra vale
+        hasta la siguiente, como máximo 10 s (las pausas no cuentan). Sin FC máxima configurada, `zones` viene vacío.
+        Una sola rodada por grupo de duplicados; solo exterior salvo `includeIndoor=true`. Sin `from`: 12 semanas.
+        Indicador de entrenamiento, no diagnóstico médico.
+      parameters:
+        - in: query
+          name: from
+          schema: { type: string, format: date }
+        - in: query
+          name: to
+          schema: { type: string, format: date }
+        - in: query
+          name: includeIndoor
+          schema: { type: boolean, default: false }
+        - in: query
+          name: subType
+          schema: { $ref: '#/components/schemas/ActivitySubType' }
+      responses:
+        '200':
+          description: Zonas
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/HeartRateZones' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 components:
   securitySchemes:
     bearerAuth:
@@ -805,7 +836,7 @@ components:
         preferences: { $ref: '#/components/schemas/Preferences' }
     Preferences:
       type: object
-      required: [locale, timeZone, distanceUnit, elevationUnit, trackPrivacyMeters]
+      required: [locale, timeZone, distanceUnit, elevationUnit, trackPrivacyMeters, maxHeartRateBpm]
       properties:
         locale:
           type: string
@@ -821,6 +852,11 @@ components:
           enum: [m]
         trackPrivacyMeters:
           $ref: '#/components/schemas/TrackPrivacyMeters'
+        maxHeartRateBpm:
+          type: [integer, 'null']
+          minimum: 100
+          maximum: 230
+          description: FC máxima que indicó el usuario para las zonas cardiacas (ADR-020); null si no la indicó.
     TrackPrivacyMeters:
       type: integer
       enum: [0, 200, 300, 500, 1000]
@@ -838,6 +874,13 @@ components:
         distanceUnit: { type: string, enum: [km] }
         elevationUnit: { type: string, enum: [m] }
         trackPrivacyMeters: { $ref: '#/components/schemas/TrackPrivacyMeters' }
+        maxHeartRateBpm:
+          type: integer
+          description: Entre 100 y 230 ppm; 0 la borra.
+          oneOf:
+            - const: 0
+            - minimum: 100
+              maximum: 230
     BikeType:
       type: string
       enum: [MTB, ROAD, GRAVEL, OTHER]
@@ -1395,3 +1438,29 @@ components:
               fromPercent: { type: ['number', 'null'] }
               toPercent: { type: ['number', 'null'] }
               distanceMeters: { type: number, minimum: 0 }
+    HeartRateZones:
+      type: object
+      additionalProperties: false
+      required: [algorithmVersion, from, to, includeIndoor, maxHeartRateBpm, activitiesWithHeartRate,
+                 activitiesWithoutHeartRate, belowZonesSeconds, zones]
+      properties:
+        algorithmVersion: { type: string, examples: ['hr-zones/1'] }
+        from: { type: string, format: date }
+        to: { type: string, format: date }
+        includeIndoor: { type: boolean }
+        maxHeartRateBpm: { type: [integer, 'null'] }
+        activitiesWithHeartRate: { type: integer, minimum: 0 }
+        activitiesWithoutHeartRate: { type: integer, minimum: 0 }
+        belowZonesSeconds: { type: number, minimum: 0 }
+        zones:
+          type: array
+          maxItems: 5
+          items:
+            type: object
+            additionalProperties: false
+            required: [zone, fromBpm, toBpm, seconds]
+            properties:
+              zone: { type: integer, minimum: 1, maximum: 5 }
+              fromBpm: { type: integer }
+              toBpm: { type: [integer, 'null'], description: Incluido; null en la zona 5. }
+              seconds: { type: number, minimum: 0 }

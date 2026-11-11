@@ -31,4 +31,10 @@ final class PreferencesProblems {
             super(HttpStatus.BAD_REQUEST);
         }
     }
+
+    static final class InvalidMaxHeartRateException extends ErrorResponseException {
+        InvalidMaxHeartRateException() {
+            super(HttpStatus.BAD_REQUEST);
+        }
+    }
 }
