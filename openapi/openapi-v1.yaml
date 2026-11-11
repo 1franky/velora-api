@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.11.0
+  version: 1.12.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -546,6 +546,58 @@ paths:
           description: La tesela no cambió desde el ETag enviado en `If-None-Match`
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /geo/exploration/summary:
+    get:
+      summary: Resumen de exploración (celdas H3 y cuadrícula de 1 km)
+      operationId: getExplorationSummary
+      description: >
+        Celdas visitadas en dos sistemas que no se comparan entre sí (ADR-018): H3 resolución 9 (área aproximada) y
+        cuadrícula métrica de 1 km en EPSG:6372 (solo México; superficie constante). Se calculan en segundo plano
+        tras importar o reprocesar, al cambiar la privacidad y al arrancar; `pendingActivities` dice cuántas faltan.
+        Las celdas salen del recorrido ya recortado por la privacidad de inicio y fin.
+      responses:
+        '200':
+          description: Resumen
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ExplorationSummary' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /geo/exploration/cells:
+    get:
+      summary: Celdas visitadas dentro de un recuadro, para dibujarlas
+      operationId: listExplorationCells
+      parameters:
+        - in: query
+          name: grid
+          schema: { type: string, enum: [H3, MX1KM], default: MX1KM }
+        - in: query
+          name: bbox
+          required: true
+          description: 'oeste,sur,este,norte en grados (WGS 84).'
+          schema: { type: string, maxLength: 120 }
+      responses:
+        '200':
+          description: >
+            Hasta 5 000 celdas, primero las más recorridas; `truncated` indica que hay más y conviene acercarse.
+          content:
+            application/geo+json:
+              schema: { $ref: '#/components/schemas/ExplorationCells' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /geo/exploration/largest-square:
+    get:
+      summary: Mayor cuadrado de celdas de 1 km visitadas
+      operationId: getLargestSquare
+      description: >
+        Cuadrícula de 1 km alineada al origen de EPSG:6372, conectividad por lados, una celda faltante rompe el
+        cuadrado. `size` es el lado en celdas (0 si aún no hay celdas).
+      responses:
+        '200':
+          description: Mayor cuadrado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/LargestSquare' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 components:
   securitySchemes:
     bearerAuth:
@@ -952,3 +1004,85 @@ components:
           type: array
           description: Actividades parecidas (heurística o clave de origen débil); no se descartó nada.
           items: { type: string, format: uuid }
+    ExplorationSummary:
+      type: object
+      additionalProperties: false
+      required: [algorithmVersion, processedActivities, pendingActivities, h3, metricGrid]
+      properties:
+        algorithmVersion: { type: string, examples: ['exploration-cells/1'] }
+        processedActivities: { type: integer, minimum: 0 }
+        pendingActivities:
+          type: integer
+          minimum: 0
+          description: Actividades con recorrido cuyas celdas aún se están calculando.
+        h3:
+          type: object
+          additionalProperties: false
+          required: [resolution, cellCount, approxAreaKm2]
+          properties:
+            resolution: { type: integer }
+            cellCount: { type: integer, minimum: 0 }
+            approxAreaKm2:
+              type: number
+              minimum: 0
+              description: Celdas × área promedio de un hexágono de esta resolución.
+        metricGrid:
+          type: object
+          additionalProperties: false
+          required: [cellSizeMeters, cellCount, areaKm2]
+          properties:
+            cellSizeMeters: { type: integer }
+            cellCount: { type: integer, minimum: 0 }
+            areaKm2: { type: number, minimum: 0 }
+    ExplorationCells:
+      type: object
+      additionalProperties: false
+      required: [type, grid, truncated, features]
+      properties:
+        type: { type: string, const: FeatureCollection }
+        grid: { type: string, enum: [H3, MX1KM] }
+        truncated: { type: boolean }
+        features:
+          type: array
+          maxItems: 5000
+          items:
+            type: object
+            additionalProperties: false
+            required: [type, geometry, properties]
+            properties:
+              type: { type: string, const: Feature }
+              geometry:
+                type: object
+                required: [type, coordinates]
+                properties:
+                  type: { type: string, const: Polygon }
+                  coordinates:
+                    type: array
+                    items:
+                      type: array
+                      items:
+                        type: array
+                        minItems: 2
+                        maxItems: 2
+                        items: { type: number }
+              properties:
+                type: object
+                additionalProperties: false
+                required: [activityCount]
+                properties:
+                  activityCount: { type: integer, minimum: 1 }
+    LargestSquare:
+      type: object
+      additionalProperties: false
+      required: [algorithmVersion, cellSizeMeters, size, sideKm, bbox]
+      properties:
+        algorithmVersion: { type: string, examples: ['largest-square/1'] }
+        cellSizeMeters: { type: integer }
+        size: { type: integer, minimum: 0, description: Lado del cuadrado en celdas. }
+        sideKm: { type: number, minimum: 0 }
+        bbox:
+          type: [array, 'null']
+          description: 'oeste,sur,este,norte del cuadrado en grados; null si no hay celdas.'
+          minItems: 4
+          maxItems: 4
+          items: { type: number }

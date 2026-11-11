@@ -4,6 +4,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 
 import mx.velora.api.IntegrationTest;
+import mx.velora.api.TestSessions;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -22,7 +23,7 @@ class OwnerBootstrapTest {
 
     @BeforeEach
     void cleanUsers() {
-        jdbc.sql("TRUNCATE users CASCADE").update();
+        TestSessions.resetUsers(jdbc);
     }
 
     @Test
