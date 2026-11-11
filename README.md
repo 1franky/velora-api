@@ -109,6 +109,30 @@ El módulo `activity` registra actividades validadas en una sola transacción (A
 
 Los originales se guardan en disco (ADR-013) en `VELORA_STORAGE_ORIGINALS_PATH` (por defecto `data/originals`, ignorado por Git), con escritura atómica, permisos solo para el propietario del proceso y verificación de SHA-256 al leer.
 
+## Despliegue (VPS)
+
+Automático con GitHub Actions, mismo esquema que nexora: cuando `CI` termina con éxito en `main`, `.github/workflows/deploy.yml` entra por SSH al VPS y ejecuta en `/home/francisco/docker/velora/velora-api`:
+
+```bash
+git pull --ff-only origin main
+docker compose -f compose.deploy.yaml up --build -d
+```
+
+- `compose.deploy.yaml`: API (`Dockerfile`) + PostgreSQL 18/PostGIS 3.7. El VPS es arm64 y `postgis/postgis` solo existe para amd64, por eso se construye `docker/postgis/Dockerfile` desde `postgres:18` + PGDG. `compose.yaml` sigue siendo solo para desarrollo.
+- La API se publica solo en `127.0.0.1:${VELORA_API_HOST_PORT:-3008}`; el acceso público (velora-android) entra por el túnel de Cloudflare con HTTPS. `velora-web` la alcanza por la red externa `velora-net` (`docker network create velora-net`). PostgreSQL no publica puertos.
+- Detrás del túnel, `getRemoteAddr()` es la IP del proxy, no la del cliente: el límite de intentos de login por IP se comparte entre todos los clientes (el límite por correo no cambia).
+- Volúmenes (incluir en respaldos): `velora-postgres-data` y `velora-originals` (ADR-013).
+- `.env` del VPS (no versionado): `VELORA_DB_NAME`, `VELORA_DB_USERNAME`, `VELORA_DB_PASSWORD`, `VELORA_API_HOST_PORT`.
+- Secretos del repositorio: `VPS_HOST` y `VPS_DEPLOY_KEY`. "Run workflow" redespliega sin commit.
+
+Propietario en producción (una sola vez):
+
+```bash
+docker compose -f compose.deploy.yaml run --rm --no-deps \
+  -e VELORA_OWNER_EMAIL=tu@correo.mx -e VELORA_OWNER_PASSWORD='mínimo 12 caracteres' \
+  api --velora.bootstrap-owner --spring.main.web-application-type=none
+```
+
 ## Licencia
 
 [Apache-2.0](LICENSE). El Garmin FIT SDK se usa como dependencia de Maven Central bajo su propia licencia (FIT Protocol License) y no se redistribuye en este repositorio.
