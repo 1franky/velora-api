@@ -25,4 +25,10 @@ final class PreferencesProblems {
             super(HttpStatus.BAD_REQUEST);
         }
     }
+
+    static final class InvalidTrackPrivacyException extends ErrorResponseException {
+        InvalidTrackPrivacyException() {
+            super(HttpStatus.BAD_REQUEST);
+        }
+    }
 }

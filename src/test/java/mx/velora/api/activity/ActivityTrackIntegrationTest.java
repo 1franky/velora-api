@@ -127,6 +127,20 @@ class ActivityTrackIntegrationTest {
     }
 
     @Test
+    void aRideWithoutPausesIsStillAMultiLineString() throws Exception {
+        var lat = new Double[] {19.0, 19.01, 19.0, 19.03};
+        var lon = new Double[] {-99.0, -98.99, -98.97, -98.95};
+        var streams = new EnumMap<StreamType, Double[]>(StreamType.class);
+        streams.put(StreamType.LATITUDE, lat);
+        streams.put(StreamType.LONGITUDE, lon);
+        var id = register(streams, new int[] {0, 0, 0, 0});
+
+        var body = track(id, 10);
+        assertThat((String) JsonPath.read(body, "$.geometry.type")).isEqualTo("MultiLineString");
+        assertThat((List<?>) JsonPath.read(body, "$.geometry.coordinates")).hasSize(1);
+    }
+
+    @Test
     void indoorActivityHasNoTrack() throws Exception {
         var streams = new EnumMap<StreamType, Double[]>(StreamType.class);
         streams.put(StreamType.POWER, new Double[] {200.0, 210.0});
