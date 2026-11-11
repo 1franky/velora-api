@@ -6,6 +6,9 @@ import mx.velora.api.importing.ActivityFootprint;
 /**
  * Tercer nivel de deduplicación (ADR-009): compara huellas de actividades distintas.
  *
+ * <p>La vista {@code counted_activities} (V10, ADR-020) aplica la misma regla en SQL para que la analítica cuente una
+ * sola rodada de cada grupo: si cambian estas tolerancias, cámbialas también allí.
+ *
  * <p>Una coincidencia solo debe generar advertencia o revisión; nunca un descarte automático. Las comparaciones de
  * distancia y recuadro se omiten cuando alguna de las dos actividades no tiene ese dato (p. ej. indoor).
  */
