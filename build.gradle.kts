@@ -30,6 +30,10 @@ dependencies {
     implementation("org.springframework.boot:spring-boot-starter-webmvc")
     implementation("org.flywaydb:flyway-database-postgresql")
     implementation("org.springframework.modulith:spring-modulith-starter-core")
+    // Registro persistente de eventos: si la API se reinicia a mitad, los listeners pendientes se reintentan (ADR-018).
+    implementation("org.springframework.modulith:spring-modulith-starter-jdbc")
+    // Índices H3 (Apache-2.0) para las celdas de exploración (ADR-018). Incluye bibliotecas nativas (~2 MB).
+    implementation("com.uber:h3:4.5.1")
     // Garmin FIT SDK: FIT Protocol License (propietaria). No redistribuir su código fuente; ver ADR-009.
     implementation("com.garmin:fit:21.221.0")
     // Requerido por Argon2PasswordEncoder (ADR-010). Licencia MIT.

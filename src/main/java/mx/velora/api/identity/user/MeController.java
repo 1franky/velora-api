@@ -5,6 +5,7 @@ import java.time.ZoneId;
 import java.util.Set;
 import java.util.UUID;
 import mx.velora.api.identity.AuthenticatedUser;
+import mx.velora.api.identity.TrackPrivacyChanged;
 import mx.velora.api.identity.UserTrackPrivacy;
 import mx.velora.api.identity.auth.AuthProblems.UnauthenticatedException;
 import mx.velora.api.identity.user.PreferencesProblems.EmptyPreferencesUpdateException;
@@ -12,7 +13,9 @@ import mx.velora.api.identity.user.PreferencesProblems.InvalidTimeZoneException;
 import mx.velora.api.identity.user.PreferencesProblems.InvalidTrackPrivacyException;
 import mx.velora.api.identity.user.PreferencesProblems.UnsupportedUnitException;
 import org.jspecify.annotations.Nullable;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.core.annotation.AuthenticationPrincipal;
+import org.springframework.transaction.annotation.Transactional;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PatchMapping;
 import org.springframework.web.bind.annotation.RequestBody;
@@ -52,10 +55,12 @@ class MeController {
 
     private final UserRepository users;
     private final Clock clock;
+    private final ApplicationEventPublisher events;
 
-    MeController(UserRepository users, Clock clock) {
+    MeController(UserRepository users, Clock clock, ApplicationEventPublisher events) {
         this.users = users;
         this.clock = clock;
+        this.events = events;
     }
 
     @GetMapping
@@ -65,6 +70,7 @@ class MeController {
     }
 
     @PatchMapping("/preferences")
+    @Transactional
     Preferences updatePreferences(
             @AuthenticationPrincipal AuthenticatedUser user, @RequestBody PreferencesUpdate update) {
         if (update.timeZone() == null
@@ -84,6 +90,7 @@ class MeController {
                 && !UserTrackPrivacy.ALLOWED_METERS.contains(update.trackPrivacyMeters())) {
             throw new InvalidTrackPrivacyException();
         }
+        var previousPrivacy = profile(user).trackPrivacyMeters();
         if (!users.updatePreferences(
                 user.userId(),
                 update.timeZone(),
@@ -92,6 +99,9 @@ class MeController {
                 update.trackPrivacyMeters(),
                 clock.instant())) {
             throw new UnauthenticatedException();
+        }
+        if (update.trackPrivacyMeters() != null && update.trackPrivacyMeters() != previousPrivacy) {
+            events.publishEvent(new TrackPrivacyChanged(user.userId(), update.trackPrivacyMeters()));
         }
         return Preferences.of(profile(user));
     }

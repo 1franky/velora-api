@@ -32,7 +32,7 @@ public final class TestSessions {
 
     /** Vacía {@code users} (y en cascada todo lo que dependa de ellos), crea el propietario e inicia sesión. */
     public static Session freshOwner(MockMvc mvc, JdbcClient jdbc, OwnerBootstrap bootstrap) throws Exception {
-        jdbc.sql("TRUNCATE users CASCADE").update();
+        resetUsers(jdbc);
         var email = "propietario-" + UUID.randomUUID() + "@example.com";
         var userId = bootstrap.createOwner(email, PASSWORD);
         var ip = "10.1." + (NEXT_IP.get() / 250) + "." + (NEXT_IP.getAndIncrement() % 250 + 1);
@@ -48,5 +48,36 @@ public final class TestSessions {
                 .getResponse()
                 .getContentAsString();
         return new Session(userId, email, JsonPath.read(body, "$.accessToken"));
+    }
+
+    /**
+     * Espera a que terminen los listeners asíncronos de la prueba anterior (p. ej. las celdas de exploración):
+     * vaciar las tablas mientras escriben provoca bloqueos mutuos. Un listener que falló queda pendiente para
+     * siempre; tras unos segundos se descarta y se sigue.
+     */
+    /** Vacía {@code users} y todo lo que depende de ellos, después de esperar a los listeners asíncronos. */
+    public static void resetUsers(JdbcClient jdbc) {
+        awaitPendingEvents(jdbc);
+        jdbc.sql("TRUNCATE users CASCADE").update();
+    }
+
+    private static void awaitPendingEvents(JdbcClient jdbc) {
+        var deadline = System.nanoTime() + java.util.concurrent.TimeUnit.SECONDS.toNanos(10);
+        while (System.nanoTime() < deadline) {
+            var pending = jdbc.sql("SELECT count(*) FROM event_publication WHERE completion_date IS NULL")
+                    .query(Long.class)
+                    .single();
+            if (pending == 0) {
+                return;
+            }
+            try {
+                Thread.sleep(50);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return;
+            }
+        }
+        // Los pendientes de otras pruebas (fallidos) no deben hacer esperar a todas las siguientes.
+        jdbc.sql("DELETE FROM event_publication WHERE completion_date IS NULL").update();
     }
 }

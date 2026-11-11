@@ -14,6 +14,7 @@ import com.jayway.jsonpath.JsonPath;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import mx.velora.api.IntegrationTest;
+import mx.velora.api.TestSessions;
 import mx.velora.api.contract.OpenApiContract;
 import mx.velora.api.identity.user.OwnerBootstrap;
 import org.junit.jupiter.api.BeforeEach;
@@ -54,7 +55,7 @@ class AuthIntegrationTest {
 
     @BeforeEach
     void createOwner() {
-        jdbc.sql("TRUNCATE users CASCADE").update();
+        TestSessions.resetUsers(jdbc);
         email = "propietario-" + UUID.randomUUID() + "@example.com";
         ip = "10.0.0." + NEXT_IP.getAndIncrement();
         ownerId = bootstrap.createOwner(email, PASSWORD);

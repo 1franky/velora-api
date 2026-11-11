@@ -13,6 +13,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.UUID;
 import mx.velora.api.IntegrationTest;
+import mx.velora.api.TestSessions;
 import mx.velora.api.activity.Metric.Source;
 import mx.velora.api.activity.NewActivity.MetricValue;
 import mx.velora.api.activity.persistence.StreamCodec;
@@ -43,7 +44,7 @@ class ActivityRegistrationIntegrationTest {
 
     @BeforeEach
     void owner() {
-        jdbc.sql("TRUNCATE users CASCADE").update();
+        TestSessions.resetUsers(jdbc);
         userId = bootstrap.createOwner("propietario-" + UUID.randomUUID() + "@example.com", "contraseña-de-prueba");
     }
 
