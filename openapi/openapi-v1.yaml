@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.17.0
+  version: 1.18.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -761,6 +761,34 @@ paths:
               schema: { $ref: '#/components/schemas/HeartRateZones' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /analytics/training-load:
+    get:
+      summary: Carga de entrenamiento semanal estimada
+      operationId: getTrainingLoad
+      description: >
+        **Estimación** con el TRIMP de Edwards (`edwards-trimp/1`, ADR-020): minutos en cada zona cardiaca por el
+        número de la zona (Z1 × 1 … Z5 × 5), sumados por semana local (lunes a domingo), las últimas `weeks` semanas
+        hasta la actual. Solo cuenta rodadas con FC y requiere la FC máxima del usuario; sin ella `load` es 0 y
+        `maxHeartRateBpm` null. Mismas reglas de duplicados y rodillo que el resto. Indicador de entrenamiento: no evalúa
+        riesgo de lesión ni da recomendaciones médicas (§12).
+      parameters:
+        - in: query
+          name: weeks
+          schema: { type: integer, minimum: 1, maximum: 104, default: 12 }
+        - in: query
+          name: includeIndoor
+          schema: { type: boolean, default: false }
+        - in: query
+          name: subType
+          schema: { $ref: '#/components/schemas/ActivitySubType' }
+      responses:
+        '200':
+          description: Carga por semana
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/TrainingLoad' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
 components:
   securitySchemes:
     bearerAuth:
@@ -1464,3 +1492,25 @@ components:
               fromBpm: { type: integer }
               toBpm: { type: [integer, 'null'], description: Incluido; null en la zona 5. }
               seconds: { type: number, minimum: 0 }
+    TrainingLoad:
+      type: object
+      additionalProperties: false
+      required: [method, estimated, maxHeartRateBpm, includeIndoor, weeks]
+      properties:
+        method: { type: string, examples: ['edwards-trimp/1'] }
+        estimated: { type: boolean, const: true }
+        maxHeartRateBpm: { type: [integer, 'null'] }
+        includeIndoor: { type: boolean }
+        weeks:
+          type: array
+          maxItems: 104
+          items:
+            type: object
+            additionalProperties: false
+            required: [start, end, load, activitiesWithHeartRate, activitiesWithoutHeartRate]
+            properties:
+              start: { type: string, format: date }
+              end: { type: string, format: date }
+              load: { type: number, minimum: 0, description: Puntos TRIMP (estimación). }
+              activitiesWithHeartRate: { type: integer, minimum: 0 }
+              activitiesWithoutHeartRate: { type: integer, minimum: 0 }
