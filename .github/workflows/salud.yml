@@ -1,0 +1,82 @@
+name: Salud de producción
+
+# Monitoreo externo (10-security-and-operations.md §5): cada 15 minutos revisa la API, la web y el mapa desde fuera
+# del VPS. Si algo falla tres veces seguidas, abre un issue con la etiqueta "caida" (o comenta en el abierto); cuando
+# se recupera, lo cierra. GitHub manda correo con cada issue y comentario.
+on:
+  schedule:
+    - cron: "*/15 * * * *"
+  workflow_dispatch: {}
+
+permissions:
+  contents: read
+  issues: write
+
+concurrency:
+  group: salud
+  cancel-in-progress: false
+
+env:
+  API_URL: https://velora-api.franciscolopez.uk
+  WEB_URL: https://velora.franciscolopez.uk
+
+jobs:
+  revisar:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Revisar la API, la web y el mapa
+        id: revisar
+        run: |
+          set -u
+          problems=()
+          retry() { # descripción, comando: 3 intentos con 20 s entre ellos (un reinicio de despliegue no es caída)
+            local what=$1; shift
+            for attempt in 1 2 3; do
+              if "$@"; then return 0; fi
+              [ "$attempt" -lt 3 ] && sleep 20
+            done
+            problems+=("$what")
+          }
+          api_up() { curl -fsS --max-time 15 "$API_URL/actuator/health" | grep -q '"status":"UP"'; }
+          web_ok() {
+            local headers
+            headers=$(curl -fsS --max-time 20 -D - -o /dev/null "$WEB_URL/login") || return 1
+            grep -qi '^content-security-policy:' <<<"$headers"
+          }
+          map_protected() { [ "$(curl -s --max-time 15 -o /dev/null -w '%{http_code}' "$WEB_URL/mapa/estilo/claro.json")" = 401 ]; }
+          retry "La API no responde UP en /actuator/health" api_up
+          retry "La web no carga /login o le faltan los encabezados de seguridad" web_ok
+          retry "El mapa no responde 401 sin sesión (/mapa/estilo/claro.json)" map_protected
+          {
+            echo "fallas<<FIN"
+            printf -- '- %s\n' "${problems[@]}"
+            echo "FIN"
+            echo "hay_fallas=$([ ${#problems[@]} -gt 0 ] && echo si || echo no)"
+          } >> "$GITHUB_OUTPUT"
+          printf '%s\n' "${problems[@]:-Todo en orden}"
+
+      - name: Abrir o actualizar el issue de caída
+        if: steps.revisar.outputs.hay_fallas == 'si'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          FALLAS: ${{ steps.revisar.outputs.fallas }}
+        run: |
+          gh label create caida --repo "$GITHUB_REPOSITORY" --color B60205 --description "Producción no responde" 2>/dev/null || true
+          open=$(gh issue list --repo "$GITHUB_REPOSITORY" --label caida --state open --json number -q '.[0].number')
+          body=$(printf '%s\n\nRevisado el %s. Runbook: `docs/operacion.md`.' "$FALLAS" "$(date -u +%Y-%m-%dT%H:%MZ)")
+          if [ -n "$open" ]; then
+            gh issue comment "$open" --repo "$GITHUB_REPOSITORY" --body "Sigue la falla:
+          $body"
+          else
+            gh issue create --repo "$GITHUB_REPOSITORY" --label caida --title "Producción no responde" --body "$body"
+          fi
+          exit 1
+
+      - name: Cerrar el issue si se recuperó
+        if: steps.revisar.outputs.hay_fallas == 'no'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          for number in $(gh issue list --repo "$GITHUB_REPOSITORY" --label caida --state open --json number -q '.[].number'); do
+            gh issue close "$number" --repo "$GITHUB_REPOSITORY" --comment "Se recuperó: la API, la web y el mapa responden ($(date -u +%Y-%m-%dT%H:%MZ))."
+          done
