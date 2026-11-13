@@ -25,6 +25,12 @@ El mapa base no se respalda porque se regenera con `pnpm basemap` en `velora-web
    sudo restic self-update
    ```
 
+   El binario debe quedar en una ruta del sistema (`/usr/bin` o `/usr/local/bin`). systemd no busca en `~/.local/bin`, y si restic solo está ahí, el servicio falla con `restic: command not found`. Si lo instalaste en tu usuario, cópialo:
+
+   ```bash
+   sudo install -m 755 ~/.local/bin/restic /usr/local/bin/restic
+   ```
+
 4. **Secretos:**
 
    ```bash
