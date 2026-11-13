@@ -160,6 +160,39 @@ class ExplorationIntegrationTest {
                 .andExpect(jsonPath("$.features").isEmpty());
     }
 
+    /**
+     * Criterio de aceptación (11, Geoespacial): las celdas no se duplican. Dos rodadas por el mismo camino (p. ej. el
+     * FIT y el GPX de la misma salida, o la ruta de diario) cuentan cada celda una vez; volver a calcular no agrega
+     * filas.
+     */
+    @Test
+    void cellsAreNotDuplicatedByRepeatedRidesOrRecomputing() throws Exception {
+        var first = ride(false);
+        await().atMost(Duration.ofSeconds(20)).until(() -> privacyOfRun(first) != null);
+        var alone = summary();
+        int squares = JsonPath.read(alone, "$.metricGrid.cellCount");
+        int hexes = JsonPath.read(alone, "$.h3.cellCount");
+
+        var second = ride(false);
+        await().atMost(Duration.ofSeconds(20)).until(() -> privacyOfRun(second) != null);
+        var both = summary();
+
+        assertThat((Integer) JsonPath.read(both, "$.processedActivities")).isEqualTo(2);
+        assertThat((Integer) JsonPath.read(both, "$.metricGrid.cellCount")).isEqualTo(squares);
+        assertThat((Integer) JsonPath.read(both, "$.h3.cellCount")).isEqualTo(hexes);
+        var rows = hexagons();
+
+        // Recalcular todo (como al subir la versión del algoritmo) deja las mismas filas.
+        jdbc.sql("UPDATE exploration_runs SET algorithm_version = 'exploration-cells/0' WHERE user_id = :u")
+                .param("u", session.userId())
+                .update();
+        assertThat((Integer) JsonPath.read(summary(), "$.pendingActivities")).isEqualTo(2);
+        updates.catchUp(null);
+        assertThat((Integer) JsonPath.read(summary(), "$.pendingActivities")).isZero();
+        assertThat(hexagons()).isEqualTo(rows);
+        assertThat((Integer) JsonPath.read(summary(), "$.h3.cellCount")).isEqualTo(hexes);
+    }
+
     @Test
     void recomputesWithThePrivacyAndForgetsDeletedActivities() throws Exception {
         var id = ride(false);
