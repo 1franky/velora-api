@@ -20,3 +20,17 @@ jobs:
       - uses: gradle/actions/setup-gradle@v6
       - name: Build, formato y pruebas
         run: ./gradlew build --no-daemon
+
+  respaldos:
+    # Respaldo y restauración de punta a punta (ADR-027), con la imagen de PostGIS del despliegue.
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: restic 0.19.1 (binario oficial, verificado)
+        run: |
+          curl -fsSLo restic.bz2 https://github.com/restic/restic/releases/download/v0.19.1/restic_0.19.1_linux_amd64.bz2
+          echo "f415415624dcc452f2a02b8c33641791a8c6d6d3b65bbb3543fcf9a25151585c  restic.bz2" | sha256sum -c -
+          bunzip2 restic.bz2 && chmod +x restic && sudo mv restic /usr/local/bin/restic
+          restic version
+      - name: Respaldar, restaurar y comparar
+        run: ops/respaldos/probar.sh
