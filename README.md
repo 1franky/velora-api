@@ -121,7 +121,7 @@ docker compose -f compose.deploy.yaml up --build -d
 - `compose.deploy.yaml`: API (`Dockerfile`) + PostgreSQL 18/PostGIS 3.7. El VPS es arm64 y `postgis/postgis` solo existe para amd64, por eso se construye `docker/postgis/Dockerfile` desde `postgres:18` + PGDG. `compose.yaml` sigue siendo solo para desarrollo.
 - La API se publica solo en `127.0.0.1:${VELORA_API_HOST_PORT:-3008}`; el acceso público (velora-android) entra por el túnel de Cloudflare con HTTPS. `velora-web` la alcanza por la red externa `velora-net` (`docker network create velora-net`). PostgreSQL no publica puertos.
 - Detrás del túnel, `getRemoteAddr()` es la IP del proxy, no la del cliente: el límite de intentos de login por IP se comparte entre todos los clientes (el límite por correo no cambia).
-- Volúmenes (incluir en respaldos): `velora-postgres-data` y `velora-originals` (ADR-013).
+- Volúmenes (incluir en respaldos): `velora-postgres-data` y `velora-originals` (ADR-013). Respaldo diario cifrado con restic a Cloudflare R2 y restauración: `ops/respaldos/README.md` (ADR-027).
 - `.env` del VPS (no versionado): `VELORA_DB_NAME`, `VELORA_DB_USERNAME`, `VELORA_DB_PASSWORD`, `VELORA_API_HOST_PORT`.
 - Secretos del repositorio: `VPS_HOST` y `VPS_DEPLOY_KEY`. "Run workflow" redespliega sin commit.
 

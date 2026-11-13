@@ -1,0 +1,11 @@
+# Todos los días a las 3:30 (hora del centro de México). Persistent: si el VPS estaba apagado, corre al arrancar.
+[Unit]
+Description=Respaldo diario de Velora
+
+[Timer]
+OnCalendar=*-*-* 03:30:00 America/Mexico_City
+RandomizedDelaySec=10m
+Persistent=true
+
+[Install]
+WantedBy=timers.target
