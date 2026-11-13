@@ -5,6 +5,7 @@ import java.util.UUID;
 import mx.velora.api.activity.ActivityImported;
 import mx.velora.api.activity.ActivityReprocessed;
 import mx.velora.api.identity.TrackPrivacyChanged;
+import mx.velora.api.platform.logging.RedactedException;
 import org.jspecify.annotations.Nullable;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -75,7 +76,10 @@ class ExplorationUpdates {
                     cells.compute(id);
                     done++;
                 } catch (RuntimeException e) {
-                    log.warn("No se pudieron calcular las celdas de exploración de la actividad {}", id, e);
+                    log.warn(
+                            "No se pudieron calcular las celdas de exploración de la actividad {}",
+                            id,
+                            RedactedException.of(e));
                 }
             }
         }

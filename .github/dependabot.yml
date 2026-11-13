@@ -1,0 +1,20 @@
+# Actualizaciones de dependencias (10-security-and-operations.md §2). Un PR por grupo cada semana; los de seguridad
+# llegan en cuanto se publica el aviso. Cada PR pasa por el CI antes de integrarse.
+version: 2
+updates:
+  - package-ecosystem: gradle
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/Mexico_City }
+    open-pull-requests-limit: 5
+    groups:
+      gradle-menores:
+        update-types: [minor, patch]
+  - package-ecosystem: github-actions
+    directory: /
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/Mexico_City }
+    groups:
+      actions:
+        patterns: ["*"]
+  - package-ecosystem: docker
+    directories: [/, /docker/postgis]
+    schedule: { interval: weekly, day: monday, time: "06:00", timezone: America/Mexico_City }
