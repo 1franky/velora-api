@@ -126,6 +126,31 @@ class ActivityTrackIntegrationTest {
                 .isEqualTo(19.0 + (POINTS - 1) * 0.00005, org.assertj.core.data.Offset.offset(1e-9));
     }
 
+    /** Criterio de aceptación (11, Geoespacial): simplificar para un zoom no modifica el track guardado. */
+    @Test
+    void simplifyingForAZoomNeverChangesTheStoredTrack() throws Exception {
+        var id = zigzagRide();
+        var stored = jdbc.sql("""
+                        SELECT point_count, ST_NPoints(route_geom) AS points, md5(ST_AsBinary(route_geom)) AS hash
+                        FROM activity_tracks WHERE activity_id = :id
+                        """).param("id", id).query().singleRow();
+
+        int overview = JsonPath.read(track(id, 3), "$.properties.returnedPointCount");
+        track(id, 10);
+        int full = JsonPath.read(track(id, 22), "$.properties.returnedPointCount");
+
+        assertThat(overview).as("muy simplificado").isLessThan(POINTS / 20);
+        assertThat(full)
+                .as("después de simplificar, el detalle completo sigue ahí")
+                .isGreaterThan(POINTS * 9 / 10);
+        var after = jdbc.sql("""
+                        SELECT point_count, ST_NPoints(route_geom) AS points, md5(ST_AsBinary(route_geom)) AS hash
+                        FROM activity_tracks WHERE activity_id = :id
+                        """).param("id", id).query().singleRow();
+        assertThat(after).isEqualTo(stored);
+        assertThat(((Number) after.get("points")).intValue()).isEqualTo(POINTS);
+    }
+
     @Test
     void aRideWithoutPausesIsStillAMultiLineString() throws Exception {
         var lat = new Double[] {19.0, 19.01, 19.0, 19.03};
