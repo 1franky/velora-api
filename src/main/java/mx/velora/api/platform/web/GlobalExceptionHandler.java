@@ -1,6 +1,7 @@
 package mx.velora.api.platform.web;
 
 import java.util.UUID;
+import mx.velora.api.platform.logging.RedactedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.context.MessageSource;
@@ -34,12 +35,12 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
     @ExceptionHandler(Exception.class)
     ProblemDetail handleUnexpected(Exception exception) {
         var errorId = UUID.randomUUID().toString();
-        // Solo el tipo de excepción y el stack trace: el mensaje puede contener datos sensibles.
+        // Solo el tipo y la traza: el mensaje puede contener datos sensibles (antes se registraba completo).
         log.error(
                 "Error no controlado [errorId={}]: {}",
                 errorId,
                 exception.getClass().getName(),
-                exception);
+                RedactedException.of(exception));
 
         var locale = LocaleContextHolder.getLocale();
         var problem = ProblemDetail.forStatusAndDetail(

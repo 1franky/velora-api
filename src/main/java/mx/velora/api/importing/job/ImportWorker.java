@@ -1,6 +1,7 @@
 package mx.velora.api.importing.job;
 
 import java.time.Clock;
+import mx.velora.api.platform.logging.RedactedException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.autoconfigure.condition.ConditionalOnProperty;
@@ -70,7 +71,7 @@ public class ImportWorker {
                 worker.drain();
             } catch (RuntimeException e) {
                 // La base puede no estar disponible un momento; el siguiente ciclo lo reintenta.
-                log.error("Fallo al revisar la cola de importación", e);
+                log.error("Fallo al revisar la cola de importación", RedactedException.of(e));
             }
         }
     }

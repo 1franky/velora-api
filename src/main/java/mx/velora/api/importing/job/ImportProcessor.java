@@ -25,6 +25,7 @@ import mx.velora.api.importing.derive.DerivedMetricsCalculator;
 import mx.velora.api.importing.job.ImportJobRepository.ClaimedJob;
 import mx.velora.api.importing.parsing.ParserLimits;
 import mx.velora.api.importing.validation.ActivityValidator;
+import mx.velora.api.platform.logging.RedactedException;
 import mx.velora.api.platform.storage.OriginalFileStore;
 import mx.velora.api.platform.storage.OriginalFileStore.StoredFile;
 import org.slf4j.Logger;
@@ -233,10 +234,14 @@ class ImportProcessor {
                     job.attemptCount(),
                     job.maxAttempts(),
                     delay,
-                    e);
+                    RedactedException.of(e));
             jobs.retryLater(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now.plus(delay), now);
         } else {
-            log.error("Importación {} falló definitivamente tras {} intentos", job.id(), job.attemptCount(), e);
+            log.error(
+                    "Importación {} falló definitivamente tras {} intentos",
+                    job.id(),
+                    job.attemptCount(),
+                    RedactedException.of(e));
             // El original se conserva para diagnóstico o reintento manual.
             jobs.fail(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now);
         }
@@ -246,7 +251,7 @@ class ImportProcessor {
         try {
             store.delete(job.storageKey());
         } catch (IOException e) {
-            log.warn("No se pudo borrar el original del trabajo {}", job.id(), e);
+            log.warn("No se pudo borrar el original del trabajo {}", job.id(), RedactedException.of(e));
         }
     }
 }

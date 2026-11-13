@@ -9,6 +9,7 @@ import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.AuthenticatedUser;
 import mx.velora.api.importing.job.ImportJobRepository;
 import mx.velora.api.importing.job.ImportProperties;
+import mx.velora.api.platform.logging.RedactedException;
 import mx.velora.api.platform.storage.OriginalFileStore;
 import mx.velora.api.platform.storage.OriginalFileStore.FileTooLargeException;
 import org.jspecify.annotations.Nullable;
@@ -108,7 +109,7 @@ class ImportController {
             try {
                 store.delete(stored.storageKey());
             } catch (IOException cleanup) {
-                log.warn("No se pudo borrar un original sin trabajo asociado", cleanup);
+                log.warn("No se pudo borrar un original sin trabajo asociado", RedactedException.of(cleanup));
             }
             throw e;
         }

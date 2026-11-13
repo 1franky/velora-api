@@ -2,6 +2,7 @@ package mx.velora.api.activity;
 
 import java.io.IOException;
 import java.util.UUID;
+import mx.velora.api.platform.logging.RedactedException;
 import mx.velora.api.platform.storage.OriginalFileStore;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -51,7 +52,10 @@ public class ActivityDeletion {
                         store.delete(key);
                     } catch (IOException | RuntimeException e) {
                         // La actividad ya no existe; el archivo queda huérfano y no es accesible por la API.
-                        log.warn("No se pudo borrar el original de la actividad {}", activityId, e);
+                        log.warn(
+                                "No se pudo borrar el original de la actividad {}",
+                                activityId,
+                                RedactedException.of(e));
                     }
                 }
             }

@@ -34,3 +34,29 @@ jobs:
           restic version
       - name: Respaldar, restaurar y comparar
         run: ops/respaldos/probar.sh
+
+  imagen:
+    # Vulnerabilidades de la imagen que se despliega (10-security-and-operations.md §2). Bloquea solo las CRÍTICAS que
+    # ya tienen parche: esas se corrigen subiendo la base o la dependencia. Las ALTAS quedan en el informe del job.
+    # La acción se fija por commit, no por etiqueta: una etiqueta se puede mover (ataque a la cadena de suministro).
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - name: Construir la imagen de la API
+        run: docker build -t velora-api:ci .
+      - name: Escanear (informe completo)
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: velora-api:ci
+          severity: CRITICAL,HIGH
+          ignore-unfixed: true
+          format: table
+          exit-code: "0"
+      - name: Bloquear vulnerabilidades críticas con parche
+        uses: aquasecurity/trivy-action@ed142fd0673e97e23eac54620cfb913e5ce36c25  # v0.36.0
+        with:
+          image-ref: velora-api:ci
+          severity: CRITICAL
+          ignore-unfixed: true
+          exit-code: "1"
+          skip-setup-trivy: true
