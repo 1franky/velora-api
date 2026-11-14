@@ -112,4 +112,20 @@ public class TokenRepository {
                 .param("id", sessionId)
                 .update();
     }
+
+    /** Borra los tokens que expiraron antes de {@code cutoff}; ya no autentican ni sirven para detectar reutilización. */
+    int deleteTokensExpiredBefore(Instant cutoff) {
+        return jdbc.sql("DELETE FROM auth_tokens WHERE expires_at < :cutoff")
+                .param("cutoff", Timestamp.from(cutoff))
+                .update();
+    }
+
+    /** Borra las sesiones creadas antes de {@code cutoff} que ya no tienen ningún token. */
+    int deleteEmptySessionsCreatedBefore(Instant cutoff) {
+        return jdbc.sql("""
+                        DELETE FROM auth_sessions s
+                        WHERE s.created_at < :cutoff
+                          AND NOT EXISTS (SELECT 1 FROM auth_tokens t WHERE t.session_id = s.id)
+                        """).param("cutoff", Timestamp.from(cutoff)).update();
+    }
 }

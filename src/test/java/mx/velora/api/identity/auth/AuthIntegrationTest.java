@@ -11,6 +11,10 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 
 import com.atlassian.oai.validator.OpenApiInteractionValidator;
 import com.jayway.jsonpath.JsonPath;
+import java.security.SecureRandom;
+import java.sql.Timestamp;
+import java.time.Duration;
+import java.time.Instant;
 import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import mx.velora.api.IntegrationTest;
@@ -46,6 +50,11 @@ class AuthIntegrationTest {
 
     @Autowired
     OwnerBootstrap bootstrap;
+
+    @Autowired
+    AuthCleanup cleanup;
+
+    private static final SecureRandom RANDOM = new SecureRandom();
 
     /** Correo e IP únicos por prueba: el limitador de intentos es un singleton en memoria. */
     private String email;
@@ -199,6 +208,96 @@ class AuthIntegrationTest {
         mvc.perform(whoami(field(second, "accessToken"))).andExpect(status().isUnauthorized());
         mvc.perform(json(post("/api/v1/auth/refresh"), "{\"refreshToken\":\"" + field(second, "refreshToken") + "\"}"))
                 .andExpect(status().isUnauthorized());
+    }
+
+    @Test
+    void cleanupPurgesExpiredTokensAndEmptySessionsButKeepsReuseDetection() throws Exception {
+        var first = login();
+        var oldRefresh = field(first, "refreshToken");
+        var second = mvc.perform(json(post("/api/v1/auth/refresh"), "{\"refreshToken\":\"" + oldRefresh + "\"}"))
+                .andExpect(status().isOk())
+                .andReturn()
+                .getResponse()
+                .getContentAsString();
+        var now = Instant.now();
+        var liveSession = jdbc.sql("SELECT id FROM auth_sessions WHERE user_id = :user")
+                .param("user", ownerId)
+                .query(UUID.class)
+                .single();
+
+        // Token vencido dentro de la sesión viva: se borra, la sesión se conserva.
+        var expiredInLive = insertToken(liveSession, now.minus(Duration.ofDays(2)));
+        // Sesión antigua con todos sus tokens vencidos: se borran ambos.
+        var oldSession = insertSession(now.minus(Duration.ofDays(40)));
+        insertToken(oldSession, now.minus(Duration.ofDays(10)));
+        // Vencido hace menos que el margen: se conserva.
+        var withinGrace = insertToken(oldSession, now.minus(Duration.ofHours(2)));
+        // Sesión reciente aún sin tokens: se conserva.
+        var freshSession = insertSession(now.minus(Duration.ofHours(1)));
+        // Sesión antigua sin tokens: se borra.
+        var emptySession = insertSession(now.minus(Duration.ofDays(3)));
+
+        var result = cleanup.purge(now);
+
+        assertThat(result.tokens()).isGreaterThanOrEqualTo(2);
+        assertThat(result.sessions()).isGreaterThanOrEqualTo(1);
+        assertThat(tokenExists(expiredInLive)).isFalse();
+        assertThat(tokenExists(withinGrace)).isTrue();
+        assertThat(sessionExists(liveSession)).isTrue();
+        assertThat(sessionExists(oldSession)).isTrue();
+        assertThat(sessionExists(freshSession)).isTrue();
+        assertThat(sessionExists(emptySession)).isFalse();
+
+        // Al vencer el último token, la sesión antigua también se borra.
+        cleanup.purge(now.plus(Duration.ofDays(1)));
+        assertThat(sessionExists(oldSession)).isFalse();
+
+        // El refresh rotado sigue vigente y su reutilización todavía revoca la sesión.
+        mvc.perform(whoami(field(second, "accessToken"))).andExpect(status().isOk());
+        mvc.perform(json(post("/api/v1/auth/refresh"), "{\"refreshToken\":\"" + oldRefresh + "\"}"))
+                .andExpect(status().isUnauthorized());
+        mvc.perform(whoami(field(second, "accessToken"))).andExpect(status().isUnauthorized());
+    }
+
+    private UUID insertSession(Instant createdAt) {
+        var id = UUID.randomUUID();
+        jdbc.sql("INSERT INTO auth_sessions (id, user_id, created_at) VALUES (:id, :user, :created)")
+                .param("id", id)
+                .param("user", ownerId)
+                .param("created", Timestamp.from(createdAt))
+                .update();
+        return id;
+    }
+
+    private byte[] insertToken(UUID session, Instant expiresAt) {
+        var hash = new byte[32];
+        RANDOM.nextBytes(hash);
+        jdbc.sql("""
+                        INSERT INTO auth_tokens (token_hash, session_id, kind, issued_at, expires_at)
+                        VALUES (:hash, :session, 'ACCESS', :issued, :expires)
+                        """)
+                .param("hash", hash)
+                .param("session", session)
+                .param("issued", Timestamp.from(expiresAt.minus(Duration.ofMinutes(15))))
+                .param("expires", Timestamp.from(expiresAt))
+                .update();
+        return hash;
+    }
+
+    private boolean tokenExists(byte[] hash) {
+        return jdbc.sql("SELECT count(*) FROM auth_tokens WHERE token_hash = :hash")
+                        .param("hash", hash)
+                        .query(Long.class)
+                        .single()
+                > 0;
+    }
+
+    private boolean sessionExists(UUID id) {
+        return jdbc.sql("SELECT count(*) FROM auth_sessions WHERE id = :id")
+                        .param("id", id)
+                        .query(Long.class)
+                        .single()
+                > 0;
     }
 
     @Test
