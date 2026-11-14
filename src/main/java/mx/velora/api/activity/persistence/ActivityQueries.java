@@ -216,6 +216,18 @@ public class ActivityQueries {
                 .optional();
     }
 
+    /**
+     * Recorrido guardado tal cual, en GeoJSON con 7 decimales (la resolución de los streams). Sin simplificar ni
+     * recortar: solo para la exportación del propio usuario. Ni siquiera una tolerancia 0 sirve, porque la
+     * simplificación quita los puntos colineales.
+     */
+    public Optional<String> fullTrackGeoJson(UUID activityId) {
+        return jdbc.sql("SELECT ST_AsGeoJSON(route_geom, 7) FROM activity_tracks WHERE activity_id = :id")
+                .param("id", activityId)
+                .query(String.class)
+                .optional();
+    }
+
     /** Resúmenes de las actividades indicadas que pertenecen al usuario, de la más antigua a la más reciente. */
     public List<ActivitySummary> summaries(UUID userId, Collection<UUID> ids) {
         if (ids.isEmpty()) {

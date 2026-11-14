@@ -14,6 +14,7 @@ import java.nio.file.attribute.PosixFilePermissions;
 import java.security.DigestInputStream;
 import java.security.MessageDigest;
 import java.security.NoSuchAlgorithmException;
+import java.util.Comparator;
 import java.util.UUID;
 import java.util.regex.Pattern;
 import mx.velora.api.platform.storage.OriginalFileStore;
@@ -121,6 +122,20 @@ class LocalOriginalFileStore implements OriginalFileStore {
     @Override
     public void delete(String storageKey) throws IOException {
         Files.deleteIfExists(resolve(storageKey));
+    }
+
+    @Override
+    public void deleteAll(UUID userId) throws IOException {
+        var dir = root.resolve(userId.toString()).normalize();
+        if (!dir.startsWith(root) || !Files.isDirectory(dir)) {
+            return;
+        }
+        try (var paths = Files.walk(dir)) {
+            // Del más profundo al más superficial: los archivos antes que su carpeta.
+            for (var path : paths.sorted(Comparator.reverseOrder()).toList()) {
+                Files.deleteIfExists(path);
+            }
+        }
     }
 
     private Path resolve(String key) {

@@ -99,4 +99,20 @@ class LocalOriginalFileStoreTest {
 
         assertThat(Files.exists(root.resolve(stored.storageKey()))).isFalse();
     }
+
+    @Test
+    void deleteAllRemovesOnlyThatUsersFilesAndIsIdempotent() throws Exception {
+        var other = UUID.randomUUID();
+        var mine = store.store(USER, new ByteArrayInputStream(CONTENT));
+        store.store(USER, new ByteArrayInputStream(CONTENT));
+        var theirs = store.store(other, new ByteArrayInputStream(CONTENT));
+
+        store.deleteAll(USER);
+        store.deleteAll(USER);
+
+        assertThat(root.resolve(USER.toString())).doesNotExist();
+        assertThat(Files.exists(root.resolve(mine.storageKey()))).isFalse();
+        assertThat(Files.exists(root.resolve(theirs.storageKey()))).isTrue();
+        assertThat(root.resolve(".tmp")).isDirectory();
+    }
 }

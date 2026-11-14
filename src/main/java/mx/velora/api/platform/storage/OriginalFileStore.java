@@ -24,6 +24,12 @@ public interface OriginalFileStore {
     void delete(String storageKey) throws IOException;
 
     /**
+     * Borra todos los originales del usuario, incluidos los que hayan quedado huérfanos. Idempotente: un usuario sin
+     * archivos no falla.
+     */
+    void deleteAll(UUID userId) throws IOException;
+
+    /**
      * @param storageKey clave opaca
      * @param sha256 hash del contenido (32 bytes)
      * @param sizeBytes tamaño en bytes

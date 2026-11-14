@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.18.0
+  version: 1.19.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
@@ -92,6 +92,57 @@ paths:
               schema: { $ref: '#/components/schemas/Preferences' }
         '400': { $ref: '#/components/responses/BadRequest' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+  /me/export:
+    get:
+      summary: Exportar todos los datos del usuario (ZIP)
+      description: >
+        Genera el ZIP mientras se descarga; no queda copia en el servidor. Contenido (formato `velora-export/1`):
+        `manifest.json`, `profile.json` (sin contraseña), `bikes.json`, `devices.json` y, por actividad,
+        `activities/{id}/activity.json`, `track.geojson` (recorrido completo, sin simplificar ni recortar por
+        privacidad), `streams.csv` y `original.{fit|gpx|tcx}`. No incluye datos que se recalculan (celdas de
+        exploración, mapa de calor, historial de reprocesos). Una sola exportación a la vez por usuario.
+      operationId: exportMyData
+      responses:
+        '200':
+          description: Archivo ZIP con todos los datos del usuario
+          headers:
+            Content-Disposition:
+              schema: { type: string }
+              description: '`attachment; filename="velora-export-AAAA-MM-DD.zip"`'
+            Cache-Control:
+              schema: { type: string, const: no-store }
+          content:
+            application/zip:
+              schema: { type: string, format: binary }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: Ya hay una exportación en curso para este usuario
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /me/deletion:
+    post:
+      summary: Borrar la cuenta y todos sus datos
+      description: >
+        Irreversible. Requiere la contraseña actual. Borra el usuario, sus sesiones, actividades, archivos
+        originales, bicicletas, dispositivos e importaciones. Las copias en los respaldos cifrados expiran según
+        su retención (ADR-028). Los fallos de contraseña cuentan para el mismo límite que el login.
+      operationId: deleteMyAccount
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/AccountDeletionRequest' }
+      responses:
+        '204': { description: Cuenta borrada; los tokens dejan de ser válidos }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '403':
+          description: La contraseña no coincide; no se borró nada
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '429': { $ref: '#/components/responses/TooManyRequests' }
   /bikes:
     get:
       summary: Listar bicicletas
@@ -839,6 +890,12 @@ components:
       required: [email, password]
       properties:
         email: { type: string, format: email, maxLength: 254 }
+        password: { type: string, minLength: 1, maxLength: 1024 }
+    AccountDeletionRequest:
+      type: object
+      additionalProperties: false
+      required: [password]
+      properties:
         password: { type: string, minLength: 1, maxLength: 1024 }
     RefreshRequest:
       type: object
