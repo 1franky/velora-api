@@ -21,6 +21,7 @@ import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.UUID;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.zip.ZipInputStream;
 import mx.velora.api.IntegrationTest;
 import mx.velora.api.TestSessions;
@@ -50,6 +51,11 @@ class AccountIntegrationTest {
     private static final Path ORIGINALS = Path.of("build/test-originals");
     private static final byte[] ORIGINAL = "contenido FIT de prueba".getBytes(UTF_8);
 
+    /** IP única por prueba: el limitador de intentos es un singleton en memoria y una IP bloqueada daría 429. */
+    private static final AtomicInteger NEXT_IP = new AtomicInteger();
+
+    private String clientIp;
+
     @Autowired
     MockMvc mvc;
 
@@ -74,6 +80,7 @@ class AccountIntegrationTest {
 
     @BeforeEach
     void ownerWithData() throws Exception {
+        clientIp = "10.9." + (NEXT_IP.get() / 250) + "." + (NEXT_IP.getAndIncrement() % 250 + 1);
         session = TestSessions.freshOwner(mvc, jdbc, bootstrap);
         bikeId = UUID.randomUUID();
         jdbc.sql("""
@@ -132,7 +139,7 @@ class AccountIntegrationTest {
                 .contentType(MediaType.APPLICATION_JSON)
                 .content("{\"password\":\"" + password + "\"}")
                 .with(request -> {
-                    request.setRemoteAddr("10.9.0." + (Math.abs(session.userId().hashCode()) % 250 + 1));
+                    request.setRemoteAddr(clientIp);
                     return request;
                 });
     }
