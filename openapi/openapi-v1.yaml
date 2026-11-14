@@ -1,10 +1,13 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.19.0
+  version: 1.20.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
-    La salud del servicio es operativa y se expone fuera de /api/v1 en /actuator/health (liveness y readiness).
+    La salud del servicio es operativa y se expone fuera de /api/v1 en /healthz.
+    Correlation ID: cada respuesta trae la cabecera X-Request-Id. El cliente puede enviar la suya
+    (8 a 64 caracteres entre letras, dígitos, punto, guion y guion bajo) para seguir la solicitud de punta a punta;
+    si falta o no es válida, la API genera una.
 servers:
   - url: /api/v1
 security:
@@ -883,7 +886,7 @@ components:
         instance: { type: string }
         errorId:
           type: string
-          description: Identificador para correlacionar errores 500 con los logs.
+          description: Identificador para correlacionar errores 500 con los logs. Es el X-Request-Id de la solicitud.
     LoginRequest:
       type: object
       additionalProperties: false

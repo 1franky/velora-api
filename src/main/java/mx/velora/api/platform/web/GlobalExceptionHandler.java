@@ -16,8 +16,8 @@ import org.springframework.web.servlet.mvc.method.annotation.ResponseEntityExcep
  * Traduce excepciones a respuestas {@code application/problem+json} (RFC 9457).
  *
  * <p>Las excepciones propias de Spring MVC (400, 404, 405, 413, etc.) las resuelve
- * {@link ResponseEntityExceptionHandler}. Cualquier otra excepción se responde como 500 con un {@code errorId}
- * para correlacionar con los logs, sin exponer mensajes internos ni stack traces.
+ * {@link ResponseEntityExceptionHandler}. Cualquier otra excepción se responde como 500 con un {@code errorId}, que es
+ * el {@code requestId} de la solicitud ({@link RequestIdFilter}), sin exponer mensajes internos ni stack traces.
  */
 @RestControllerAdvice
 class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
@@ -34,7 +34,9 @@ class GlobalExceptionHandler extends ResponseEntityExceptionHandler {
 
     @ExceptionHandler(Exception.class)
     ProblemDetail handleUnexpected(Exception exception) {
-        var errorId = UUID.randomUUID().toString();
+        // El mismo id de la solicitud: con él se encuentran en los logs todas sus líneas, no solo la del error.
+        var current = RequestIdFilter.current();
+        var errorId = current != null ? current : UUID.randomUUID().toString();
         // Solo el tipo y la traza: el mensaje puede contener datos sensibles (antes se registraba completo).
         log.error(
                 "Error no controlado [errorId={}]: {}",

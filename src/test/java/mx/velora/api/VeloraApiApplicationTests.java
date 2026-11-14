@@ -33,11 +33,9 @@ class VeloraApiApplicationTests {
 
     @Test
     void healthAndProbesAreUp() throws Exception {
-        mvc.perform(get("/actuator/health"))
+        mvc.perform(get("/healthz"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.status").value("UP"));
-        mvc.perform(get("/actuator/health/readiness")).andExpect(status().isOk());
-        mvc.perform(get("/actuator/health/liveness")).andExpect(status().isOk());
     }
 
     @Test

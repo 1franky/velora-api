@@ -52,16 +52,30 @@ server:
     include-binding-errors: never
     include-exception: false
 
+logging:
+  pattern:
+    # Correlation ID en los logs de texto (local y pruebas). En producción los logs son JSON (ECS) y el MDC ya va
+    # como campos: requestId e importJobId.
+    correlation: "%replace([%X{requestId}%X{importJobId}] ){'\\[\\] ', ''}"
+
 management:
+  # Actuator vive en un puerto propio que no se publica en el host: el túnel de Cloudflare no lo alcanza. Solo la
+  # salud se sirve además en el puerto público, en /healthz, para el monitoreo (grupo "publica").
+  server:
+    port: ${VELORA_MANAGEMENT_PORT:8081}
   endpoints:
     web:
       exposure:
-        include: health
+        include: health, metrics
   endpoint:
     health:
       show-details: never
       probes:
         enabled: true
+      group:
+        publica:
+          include: "*"
+          additional-path: "server:/healthz"
 
 velora:
   defaults:

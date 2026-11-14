@@ -2,6 +2,7 @@ package mx.velora.api.platform.web;
 
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -31,6 +32,7 @@ class GlobalExceptionHandlerTest {
         mvc = MockMvcBuilders.standaloneSetup(new FailingController())
                 .setControllerAdvice(new GlobalExceptionHandler(messages))
                 .setLocaleResolver(new FixedLocaleResolver(Locale.forLanguageTag("es-MX")))
+                .addFilters(new RequestIdFilter())
                 .build();
     }
 
@@ -45,6 +47,25 @@ class GlobalExceptionHandlerTest {
                 .andExpect(jsonPath("$.errorId").isNotEmpty())
                 .andExpect(content().string(Matchers.not(Matchers.containsString("secreto"))))
                 .andExpect(content().string(Matchers.not(Matchers.containsString("IllegalStateException"))));
+    }
+
+    @Test
+    void errorIdIsTheRequestIdSoEveryLogLineOfTheRequestCanBeFound() throws Exception {
+        mvc.perform(get("/boom").header(RequestIdFilter.HEADER, "web-1234abcd"))
+                .andExpect(status().isInternalServerError())
+                .andExpect(header().string(RequestIdFilter.HEADER, "web-1234abcd"))
+                .andExpect(jsonPath("$.errorId").value("web-1234abcd"));
+    }
+
+    @Test
+    void requestIdIsGeneratedWhenMissingOrUnsafe() throws Exception {
+        var generated = mvc.perform(get("/boom")).andReturn().getResponse().getHeader(RequestIdFilter.HEADER);
+        org.assertj.core.api.Assertions.assertThat(generated).matches("[0-9a-f-]{36}");
+
+        for (var unsafe : new String[] {"corto", "x".repeat(65), "con espacio 12345", "inyección\nlog"}) {
+            mvc.perform(get("/boom").header(RequestIdFilter.HEADER, unsafe))
+                    .andExpect(header().string(RequestIdFilter.HEADER, Matchers.matchesPattern("[0-9a-f-]{36}")));
+        }
     }
 
     @RestController
