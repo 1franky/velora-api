@@ -86,7 +86,7 @@ En un VPS nuevo o tras perder la base, desde `/home/francisco/docker/velora/velo
 
    ```bash
    docker compose -f compose.deploy.yaml up -d
-   curl -s http://127.0.0.1:3008/actuator/health    # {"status":"UP"}
+   curl -s http://127.0.0.1:3008/healthz            # {"status":"UP"}
    ```
 
    Entra a la web y revisa que el historial, el detalle de una rodada y el mapa se vean.

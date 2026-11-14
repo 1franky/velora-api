@@ -7,7 +7,7 @@ Runbook para desplegar, revisar, revertir y recuperar Velora (10-security-and-op
 ```text
 Internet ──HTTPS──▶ Túnel de Cloudflare ──▶ VPS (arm64)
                                              ├─ velora-web  (Next.js)   127.0.0.1:3007
-                                             ├─ velora-api  (Spring)    127.0.0.1:3008
+                                             ├─ velora-api  (Spring)    127.0.0.1:3008 (Actuator en :8081, solo velora-net)
                                              └─ velora-postgres (PostGIS) sin puertos, solo red velora-net
 ```
 
@@ -28,7 +28,8 @@ Es automático. Al integrar un PR a `main`, el workflow **CI** corre, y si pasa,
 Después de cada despliegue:
 
 ```bash
-curl -s https://velora-api.franciscolopez.uk/actuator/health        # {"groups":[...],"status":"UP"}
+curl -s https://velora-api.franciscolopez.uk/healthz               # {"status":"UP"}
+curl -s -o /dev/null -w '%{http_code}\n' https://velora-api.franciscolopez.uk/actuator/metrics   # 404: Actuator no es público
 curl -sI https://velora.franciscolopez.uk/login | grep -i content-security-policy
 ```
 
@@ -40,7 +41,7 @@ Desplegar siempre toma `main`, así que revertir es un PR:
 
 1. En GitHub, en el PR que causó el problema, usa **Revert** y luego integra ese PR de reversión. El CI y el despliegue corren solos.
 2. **Si el PR incluía una migración de Flyway**, revertir el código no deshace el esquema; Flyway solo avanza. Hay dos caminos:
-   - **Si la migración solo agregó cosas** (tablas, columnas, índices): el código anterior suele funcionar igual. Revisa `/actuator/health` y la web.
+   - **Si la migración solo agregó cosas** (tablas, columnas, índices): el código anterior suele funcionar igual. Revisa `/healthz` y la web.
    - **Si cambió o borró datos:** restaura el respaldo anterior a la migración (`ops/respaldos/README.md` → Restaurar, con el ID de la instantánea) y despliega el código revertido.
 
 Urgente y sin GitHub: en el VPS, `git checkout <commit-bueno>` y `docker compose -f compose.deploy.yaml up --build -d`. El siguiente despliegue automático vuelve a `main`, así que haz también el PR de reversión.
@@ -50,13 +51,41 @@ Urgente y sin GitHub: en el VPS, `git checkout <commit-bueno>` y `docker compose
 ```bash
 cd /home/francisco/docker/velora/velora-api
 docker compose -f compose.deploy.yaml ps
-docker logs --since 1h velora-api          # sin tokens ni coordenadas; los 500 traen errorId
 docker logs --since 1h velora-web
 docker exec velora-postgres psql -U velora -d velora -c "select status, count(*) from import_jobs group by 1"
 df -h / && docker system df                 # espacio en disco
 ```
 
-Un usuario que reporta un error 500 ve un `errorId`. Búscalo con `docker logs velora-api | grep <errorId>`. Las excepciones se registran sin sus mensajes (`RedactedException`): el tipo y la traza indican dónde falló, y el `errorId` o el id del trabajo de importación sirven para reproducirlo.
+### Logs de la API
+
+La API escribe un objeto JSON por línea (formato ECS). Las líneas no incluyen tokens ni coordenadas. Las recetas usan `jq` (`sudo apt install jq` si falta). Cada línea de una solicitud lleva su `requestId`, y cada línea de un trabajo de importación lleva su `importJobId`. Se leen con `jq`:
+
+```bash
+# Legible: hora, nivel, id y mensaje
+docker logs --since 1h velora-api 2>&1 | jq -rR 'fromjson? | [."@timestamp", .log.level, (.requestId // .importJobId // "-"), .message] | @tsv'
+# Solo advertencias y errores, con su traza
+docker logs --since 24h velora-api 2>&1 | jq -cR 'fromjson? | select(.log.level == "WARN" or .log.level == "ERROR")'
+# Todo lo de una solicitud o de un trabajo de importación
+docker logs velora-api 2>&1 | jq -cR 'fromjson? | select(.requestId == "<id>")'
+docker logs velora-api 2>&1 | jq -cR 'fromjson? | select(.importJobId == "<id-del-trabajo>")'
+```
+
+Un usuario que reporta un error 500 ve un `errorId`: es el `requestId` de esa solicitud, y también va en la cabecera `X-Request-Id` de cada respuesta. Con él salen todas las líneas de la solicitud, no solo la del error. Las excepciones se registran sin sus mensajes (`RedactedException`): el tipo y la traza (`error.stack_trace`) indican dónde falló.
+
+### Métricas
+
+Actuator escucha en el puerto 8081 del contenedor, que no se publica ni pasa por el túnel. Se consulta desde la red `velora-net`, porque la imagen no trae `curl`:
+
+```bash
+m() { docker run --rm --network velora-net curlimages/curl:8.11.1 -s "http://velora-api:8081/actuator/metrics/$1" | jq -c '[.measurements[] | {(.statistic): .value}] | add'; }
+m 'velora.import.queue?tag=status:queued'          # trabajos en espera
+m 'velora.import.queue?tag=status:processing'      # en proceso
+m 'velora.import.jobs?tag=outcome:failed'          # fallidos desde el último arranque (también: completed, duplicate, rejected, retry, abandoned)
+m 'velora.import.duration?tag=outcome:completed'   # COUNT, TOTAL_TIME (s) y MAX de los intentos exitosos
+m 'http.server.requests?tag=status:500'            # errores 500 de la API
+```
+
+Los contadores se reinician con cada despliegue. Para ver todas las métricas: `.../actuator/metrics` sin nombre.
 
 ## Reiniciar
 
@@ -68,7 +97,7 @@ Las importaciones que estaban en proceso se recuperan solas al arrancar: los tra
 
 ## Monitoreo
 
-- **Salud de producción** (`.github/workflows/salud.yml`): cada 15 minutos revisa que la API responda `UP`, que la web cargue con su CSP y que el mapa responda 401 sin sesión. Con tres fallas seguidas abre un issue con la etiqueta `caida`, o comenta en el abierto, y lo cierra cuando se recupera. GitHub avisa por correo.
+- **Salud de producción** (`.github/workflows/salud.yml`): cada 15 minutos revisa que la API responda `UP` en `/healthz`, que la web cargue con su CSP y que el mapa responda 401 sin sesión. Con tres fallas seguidas abre un issue con la etiqueta `caida`, o comenta en el abierto, y lo cierra cuando se recupera. GitHub avisa por correo.
 - **Respaldos:** si fallan, abren un issue con la etiqueta `respaldo`.
 - **Dependabot:** cada lunes abre PRs de actualización en los tres repositorios. Integrarlos solo si su CI pasa. Los de la API y la web se despliegan solos.
 - **Límite de GitHub:** suspende los workflows programados de un repositorio público tras 60 días sin actividad. Si Velora pasa dos meses sin cambios, reactívalo en **Actions → Salud de producción → Enable workflow**.

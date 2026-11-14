@@ -36,4 +36,4 @@ log "Restaurando los originales desde la instantánea ${FILES_SNAPSHOT}"
 restic dump --tag velora,originales "$FILES_SNAPSHOT" /velora-originales.tar \
   | docker run --rm -i -v "${ORIGINALS_VOLUME}:/data" "$HELPER_IMAGE" tar -C /data -xf -
 
-log "Restauración completa. Arranca la API y revisa /actuator/health y tu historial."
+log "Restauración completa. Arranca la API y revisa /healthz y tu historial."

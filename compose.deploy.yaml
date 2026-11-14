@@ -26,6 +26,10 @@ services:
       VELORA_DB_PASSWORD: ${VELORA_DB_PASSWORD:?Define VELORA_DB_PASSWORD en .env}
       VELORA_API_PORT: 8080
       VELORA_STORAGE_ORIGINALS_PATH: /data/originals
+      # Un objeto JSON (ECS) por línea, con requestId e importJobId como campos. Ver docs/operacion.md.
+      LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+    # Solo el puerto público. Actuator (métricas) escucha en 8081, que no se publica: solo es alcanzable dentro de
+    # velora-net.
     ports:
       - "127.0.0.1:${VELORA_API_HOST_PORT:-3008}:8080"
     volumes:

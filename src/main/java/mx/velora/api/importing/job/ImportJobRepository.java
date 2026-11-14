@@ -282,4 +282,12 @@ public class ImportJobRepository {
                 rs.getString("warnings"),
                 duplicates);
     }
+
+    /** Cuántos trabajos hay en un estado; para la métrica de tamaño de cola. */
+    long countByStatus(String status) {
+        return jdbc.sql("SELECT count(*) FROM import_jobs WHERE status = :status")
+                .param("status", status)
+                .query(Long.class)
+                .single();
+    }
 }

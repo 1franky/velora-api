@@ -85,11 +85,20 @@ class ImportProcessor {
         this.validator = new ActivityValidator(clock);
     }
 
-    void process(ClaimedJob job) {
+    /** Cómo terminó un intento; alimenta las métricas de importación. */
+    enum Outcome {
+        COMPLETED,
+        DUPLICATE,
+        REJECTED,
+        RETRY,
+        FAILED
+    }
+
+    Outcome process(ClaimedJob job) {
         if (job.isReprocess() && job.activityId() == null) {
             // La actividad se borró mientras el reproceso esperaba (FK con ON DELETE SET NULL).
             jobs.fail(job.id(), "ACTIVITY_NOT_FOUND", ImportMessages.ACTIVITY_GONE, clock.instant());
-            return;
+            return Outcome.FAILED;
         }
         String format = null;
         try {
@@ -97,19 +106,18 @@ class ImportProcessor {
             format = imported.format().name();
             var validated = validator.validate(imported);
             var derived = DerivedMetricsCalculator.compute(validated.activity(), DerivedMetrics.Parameters.DEFAULT);
-            if (job.isReprocess()) {
-                reprocess(job, validated, derived, format);
-            } else {
-                handle(job, validated, derived, format);
-            }
+            return job.isReprocess()
+                    ? reprocess(job, validated, derived, format)
+                    : handle(job, validated, derived, format);
         } catch (ImportRejectedException e) {
             jobs.reject(job.id(), e.reason().name(), ImportMessages.detail(e), clock.instant());
             // Un reproceso rechazado deja la actividad y su original intactos.
             if (!job.isReprocess()) {
                 deleteOriginal(job);
             }
+            return Outcome.REJECTED;
         } catch (RuntimeException | IOException e) {
-            onUnexpected(job, e);
+            return onUnexpected(job, e);
         }
     }
 
@@ -127,7 +135,7 @@ class ImportProcessor {
         }
     }
 
-    private void handle(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
+    private Outcome handle(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
         var activity = validated.activity();
         var possibleDuplicates = new LinkedHashSet<UUID>();
         var sourceKey = activity.sourceActivityKey();
@@ -135,8 +143,7 @@ class ImportProcessor {
             var sameKey = activities.withSourceKey(job.userId(), sourceKey);
             if (sourceKey.startsWith("fit:") && !sameKey.isEmpty()) {
                 // file_id de FIT identifica la actividad del dispositivo: es la misma aunque el archivo cambie.
-                finishAsDuplicateOrOwn(job, sameKey.getFirst(), format, validated, possibleDuplicates);
-                return;
+                return finishAsDuplicateOrOwn(job, sameKey.getFirst(), format, validated, possibleDuplicates);
             }
             possibleDuplicates.addAll(sameKey);
         }
@@ -152,13 +159,14 @@ class ImportProcessor {
                     warnings(validated, possibleDuplicates),
                     List.copyOf(possibleDuplicates),
                     clock.instant());
+            return Outcome.COMPLETED;
         } catch (DuplicateOriginalException e) {
-            finishAsDuplicateOrOwn(job, e.existingActivityId(), format, validated, possibleDuplicates);
+            return finishAsDuplicateOrOwn(job, e.existingActivityId(), format, validated, possibleDuplicates);
         }
     }
 
     /** Recalcula una actividad existente desde su original, sin deduplicar ni crear actividades. */
-    private void reprocess(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
+    private Outcome reprocess(ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
         var now = clock.instant();
         var target = job.activityId();
         if (target == null
@@ -167,13 +175,14 @@ class ImportProcessor {
                         target,
                         ActivityMapper.toNewActivity(validated, derived, context(job, validated.activity())))) {
             jobs.fail(job.id(), "ACTIVITY_NOT_FOUND", ImportMessages.ACTIVITY_GONE, now);
-            return;
+            return Outcome.FAILED;
         }
         jobs.complete(job.id(), target, format, warnings(validated, List.of()), List.of(), now);
+        return Outcome.COMPLETED;
     }
 
     /** Si la actividad existente usa este mismo original, la registró un intento anterior: se completa. */
-    private void finishAsDuplicateOrOwn(
+    private Outcome finishAsDuplicateOrOwn(
             ClaimedJob job,
             UUID existing,
             String format,
@@ -188,10 +197,11 @@ class ImportProcessor {
                     warnings(validated, possibleDuplicates),
                     List.copyOf(possibleDuplicates),
                     clock.instant());
-            return;
+            return Outcome.COMPLETED;
         }
         jobs.duplicate(job.id(), existing, format, clock.instant());
         deleteOriginal(job);
+        return Outcome.DUPLICATE;
     }
 
     private ActivityMapper.Context context(ClaimedJob job, ImportedActivity activity) {
@@ -224,7 +234,7 @@ class ImportProcessor {
         return items.stream().collect(Collectors.joining(",", "[", "]"));
     }
 
-    private void onUnexpected(ClaimedJob job, Exception e) {
+    private Outcome onUnexpected(ClaimedJob job, Exception e) {
         var now = clock.instant();
         if (job.attemptCount() < job.maxAttempts()) {
             var delay = properties.retryBaseDelay().multipliedBy(1L << Math.min(job.attemptCount() - 1, 10));
@@ -236,15 +246,16 @@ class ImportProcessor {
                     delay,
                     RedactedException.of(e));
             jobs.retryLater(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now.plus(delay), now);
-        } else {
-            log.error(
-                    "Importación {} falló definitivamente tras {} intentos",
-                    job.id(),
-                    job.attemptCount(),
-                    RedactedException.of(e));
-            // El original se conserva para diagnóstico o reintento manual.
-            jobs.fail(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now);
+            return Outcome.RETRY;
         }
+        log.error(
+                "Importación {} falló definitivamente tras {} intentos",
+                job.id(),
+                job.attemptCount(),
+                RedactedException.of(e));
+        // El original se conserva para diagnóstico o reintento manual.
+        jobs.fail(job.id(), "INTERNAL_ERROR", ImportMessages.INTERNAL_ERROR, now);
+        return Outcome.FAILED;
     }
 
     private void deleteOriginal(ClaimedJob job) {

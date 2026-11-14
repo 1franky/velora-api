@@ -39,7 +39,9 @@ class SecurityConfiguration {
                 .authorizeHttpRequests(authorize -> authorize
                         .requestMatchers("/api/v1/auth/login", "/api/v1/auth/refresh", "/api/v1/auth/logout")
                         .permitAll()
-                        .requestMatchers("/actuator/health", "/actuator/health/**")
+                        // Salud pública para el monitoreo. Actuator vive en el puerto de administración, que no se
+                        // publica en el host: ahí no hay sesión que pedir.
+                        .requestMatchers("/healthz", "/actuator/**")
                         .permitAll()
                         .requestMatchers("/error")
                         .permitAll()

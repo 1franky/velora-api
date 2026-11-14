@@ -13,6 +13,7 @@ import com.atlassian.oai.validator.OpenApiInteractionValidator;
 import com.garmin.fit.Sport;
 import com.garmin.fit.SubSport;
 import com.jayway.jsonpath.JsonPath;
+import io.micrometer.core.instrument.MeterRegistry;
 import java.io.IOException;
 import java.nio.charset.StandardCharsets;
 import java.nio.file.Files;
@@ -29,7 +30,10 @@ import mx.velora.api.importing.job.ImportWorker;
 import mx.velora.api.importing.parsing.FitFixtures;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.extension.ExtendWith;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.system.CapturedOutput;
+import org.springframework.boot.test.system.OutputCaptureExtension;
 import org.springframework.http.MediaType;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.mock.web.MockMultipartFile;
@@ -40,6 +44,7 @@ import org.springframework.test.web.servlet.ResultActions;
 
 @IntegrationTest
 @RecordApplicationEvents
+@ExtendWith(OutputCaptureExtension.class)
 class ImportPipelineIntegrationTest {
 
     private static final OpenApiInteractionValidator CONTRACT = OpenApiContract.validator();
@@ -59,6 +64,9 @@ class ImportPipelineIntegrationTest {
 
     @Autowired
     ApplicationEvents events;
+
+    @Autowired
+    MeterRegistry meters;
 
     private TestSessions.Session session;
 
@@ -252,6 +260,45 @@ class ImportPipelineIntegrationTest {
                 .containsExactly(first);
         assertThat((java.util.List<String>) JsonPath.read(job, "$.warnings[*].code"))
                 .contains("POSSIBLE_DUPLICATE");
+    }
+
+    private double jobs(String outcome) {
+        var counter = meters.find("velora.import.jobs")
+                .tags("kind", "import", "outcome", outcome)
+                .counter();
+        return counter == null ? 0 : counter.count();
+    }
+
+    private double queued() {
+        return meters.get("velora.import.queue").tag("status", "queued").gauge().value();
+    }
+
+    @Test
+    void metricsCountOutcomesDurationAndQueue(CapturedOutput output) throws Exception {
+        var completed = jobs("completed");
+        var duplicate = jobs("duplicate");
+        var rejected = jobs("rejected");
+        var gpx = fixture("gpx/no-elevation.gpx");
+
+        String jobId = JsonPath.read(
+                upload(gpx, "a.gpx", Map.of()).andReturn().getResponse().getContentAsString(), "$.jobId");
+        upload(gpx, "copia.gpx", Map.of());
+        upload(fixture("gpx/truncated.gpx"), "t.gpx", Map.of());
+        assertThat(queued()).isEqualTo(3);
+
+        worker.drain();
+
+        assertThat(queued()).isZero();
+        assertThat(jobs("completed") - completed).isEqualTo(1);
+        assertThat(jobs("duplicate") - duplicate).isEqualTo(1);
+        assertThat(jobs("rejected") - rejected).isEqualTo(1);
+        assertThat(meters.get("velora.import.duration")
+                        .tags("kind", "import", "outcome", "completed")
+                        .timer()
+                        .count())
+                .isPositive();
+        // Cada línea de log del intento lleva el id del trabajo.
+        assertThat(output.getAll()).contains("[" + jobId + "]");
     }
 
     @Test
