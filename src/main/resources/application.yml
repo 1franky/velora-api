@@ -41,6 +41,11 @@ spring:
 
 server:
   port: ${VELORA_API_PORT:8080}
+  # La API siempre va detrás de un proxy (túnel de Cloudflare para Android, BFF de velora-web por velora-net).
+  # Tomcat (RemoteIpValve) toma la IP del cliente de X-Forwarded-For solo si la conexión llega desde una red
+  # privada o loopback (server.tomcat.remoteip.internal-proxies por defecto), y usa la entrada no confiable más a
+  # la derecha: lo que un cliente agregue a la izquierda se ignora. El rate limiting del login depende de esto.
+  forward-headers-strategy: native
   error:
     include-stacktrace: never
     include-message: never

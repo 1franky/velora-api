@@ -16,6 +16,8 @@ import org.springframework.context.annotation.Import;
 @Target(ElementType.TYPE)
 @Retention(RetentionPolicy.RUNTIME)
 @SpringBootTest(
+        // Servidor real además de MockMvc: hay comportamiento de Tomcat (p. ej. RemoteIpValve) que MockMvc no ejecuta.
+        webEnvironment = SpringBootTest.WebEnvironment.RANDOM_PORT,
         properties = {
             "velora.storage.originals-path=build/test-originals",
             // Las pruebas ejecutan el worker a mano para controlar el momento.
