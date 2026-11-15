@@ -39,12 +39,20 @@ public class StravaConnections {
 
     private static final Logger log = LoggerFactory.getLogger(StravaConnections.class);
 
+    /**
+     * @param backfillDone si la carga inicial del historial terminó
+     * @param lastSyncAt última ejecución de la sincronización
+     * @param lastSyncError {@code AUTH_REVOKED} o {@code STRAVA_UNAVAILABLE} si la última ejecución falló
+     */
     public record Status(
             boolean enabled,
             boolean connected,
             @Nullable Long athleteId,
             @Nullable Instant connectedAt,
-            long importedActivities) {}
+            long importedActivities,
+            boolean backfillDone,
+            @Nullable Instant lastSyncAt,
+            @Nullable String lastSyncError) {}
 
     private final StravaProperties properties;
     private final StravaConnectionRepository connections;
@@ -73,15 +81,19 @@ public class StravaConnections {
 
     public Status status(UUID userId) {
         if (!properties.enabled()) {
-            return new Status(false, false, null, null, 0);
+            return new Status(false, false, null, null, 0, false, null, null);
         }
         var row = connections.find(userId);
+        var sync = connections.syncState(userId);
         return new Status(
                 true,
                 row.isPresent(),
                 row.map(StravaConnectionRepository.Row::athleteId).orElse(null),
                 row.map(StravaConnectionRepository.Row::connectedAt).orElse(null),
-                activities.countBySource(userId, SOURCE_TYPE));
+                activities.countBySource(userId, SOURCE_TYPE),
+                sync.map(StravaConnectionRepository.SyncState::backfillDone).orElse(false),
+                sync.map(StravaConnectionRepository.SyncState::lastSyncAt).orElse(null),
+                sync.map(StravaConnectionRepository.SyncState::lastSyncError).orElse(null));
     }
 
     /** URL de autorización de Strava con un estado de un solo uso ligado al usuario. */

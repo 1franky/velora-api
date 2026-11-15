@@ -53,5 +53,11 @@ public class FakeStravaAuth implements StravaAuth {
         FakeStravaAuth fakeStravaAuth() {
             return new FakeStravaAuth();
         }
+
+        @Bean
+        @Primary
+        FakeStravaApi fakeStravaApi() {
+            return new FakeStravaApi();
+        }
     }
 }

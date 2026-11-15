@@ -38,7 +38,9 @@ class HttpStravaAuthTest {
                         "MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
                         URI.create("https://velora.local/retorno"),
                         URI.create("https://strava.test"),
-                        Duration.ofMinutes(10)));
+                        Duration.ofMinutes(10),
+                        null,
+                        new StravaProperties.Sync(true, Duration.ofMinutes(15), 40)));
     }
 
     @Test

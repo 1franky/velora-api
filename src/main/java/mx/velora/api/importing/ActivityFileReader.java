@@ -10,6 +10,7 @@ import mx.velora.api.importing.parsing.FileFormatDetector;
 import mx.velora.api.importing.parsing.FitParser;
 import mx.velora.api.importing.parsing.GpxParser;
 import mx.velora.api.importing.parsing.ParserLimits;
+import mx.velora.api.importing.parsing.StravaParser;
 import mx.velora.api.importing.parsing.TcxParser;
 
 /** Punto de entrada del módulo para leer un archivo de actividad: detecta el formato y delega en su parser. */
@@ -26,7 +27,16 @@ public final class ActivityFileReader {
     }
 
     public static ActivityFileReader withDefaultParsers(ParserLimits limits) {
-        return new ActivityFileReader(List.of(new FitParser(limits), new GpxParser(limits), new TcxParser(limits)));
+        return new ActivityFileReader(
+                List.of(new FitParser(limits), new GpxParser(limits), new TcxParser(limits), new StravaParser(limits)));
+    }
+
+    /**
+     * Lee un documento de Strava sin detección: el formato no se infiere del contenido, para que solo los trabajos
+     * creados por la sincronización lleguen a este parser (ADR-030).
+     */
+    public ImportedActivity readStrava(InputStream content) {
+        return parsers.get(FileFormat.STRAVA).parse(content);
     }
 
     /**

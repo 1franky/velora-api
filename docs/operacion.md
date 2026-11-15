@@ -117,6 +117,22 @@ El conector de Strava (ADR-030) está apagado por omisión. **Incumple los térm
    Guarda la clave de tokens en tu gestor de contraseñas. Si se pierde, hay que volver a conectar Strava.
 3. `docker compose -f compose.deploy.yaml up -d api`.
 
+Para limitar la carga inicial a una fecha, agrega `VELORA_STRAVA_BACKFILL_SINCE=2024-01-01` al `.env`. Sin ella se trae todo el historial.
+
+**Cómo sincroniza:**
+- Cada 15 minutos trae lo nuevo y avanza la carga inicial hacia atrás.
+- Procesa hasta 40 actividades por ejecución y respeta la cuota de lectura de Strava (100 cada 15 min, 1000 al día). Un historial largo tarda horas o días.
+- Solo importa ciclismo con datos. Si ya subiste la rodada como archivo, descarta la de Strava.
+- Lo que borres en Velora no se vuelve a importar.
+
+```bash
+docker logs --since 2h velora-api 2>&1 | jq -rR 'fromjson? | select(.log.logger | test("strava")) | [."@timestamp", .message] | @tsv'
+docker exec velora-postgres psql -U velora -d velora -c "select outcome, count(*) from strava_sync_items group by 1"
+docker exec velora-postgres psql -U velora -d velora -c "select backfill_done, backfill_before, last_sync_at, last_sync_error from strava_connections"
+```
+
+`last_sync_error = AUTH_REVOKED` significa que hay que volver a conectar Strava desde la web. `STRAVA_UNAVAILABLE` se reintenta solo.
+
 Para apagarlo: desconecta Strava desde la web (opcionalmente borrando lo importado), pon `VELORA_STRAVA_ENABLED=false` y reinicia la API.
 
 ## Tareas periódicas

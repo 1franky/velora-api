@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.21.0
+  version: 1.22.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /healthz.
@@ -969,13 +969,20 @@ components:
     StravaStatus:
       type: object
       additionalProperties: false
-      required: [enabled, connected, athleteId, connectedAt, importedActivities]
+      required:
+        [enabled, connected, athleteId, connectedAt, importedActivities, backfillDone, lastSyncAt, lastSyncError]
       properties:
         enabled: { type: boolean, description: Si el conector está encendido en el servidor }
         connected: { type: boolean }
         athleteId: { type: [integer, 'null'], format: int64 }
         connectedAt: { type: [string, 'null'], format: date-time }
         importedActivities: { type: integer, format: int64, minimum: 0, description: Actividades importadas de Strava }
+        backfillDone: { type: boolean, description: Si la carga inicial del historial terminó }
+        lastSyncAt: { type: [string, 'null'], format: date-time }
+        lastSyncError:
+          type: [string, 'null']
+          enum: [AUTH_REVOKED, STRAVA_UNAVAILABLE, null]
+          description: AUTH_REVOKED pide volver a conectar; STRAVA_UNAVAILABLE se reintenta solo
     StravaAuthorization:
       type: object
       additionalProperties: false
@@ -1219,7 +1226,10 @@ components:
         averageSpeedMps: { type: [number, 'null'] }
         bikeId: { type: [string, 'null'], format: uuid }
         timeZone: { type: string }
-        sourceType: { type: string, enum: [FIT, GPX, TCX] }
+        sourceType:
+          type: string
+          enum: [FIT, GPX, TCX, STRAVA]
+          description: STRAVA si la importó la sincronización con Strava (ADR-030)
         deviceId: { type: [string, 'null'], format: uuid }
         elevationLossMeters: { type: [number, 'null'] }
         maxSpeedMps: { type: [number, 'null'] }
@@ -1241,7 +1251,10 @@ components:
           type: object
           required: [format, sizeBytes, importedAt]
           properties:
-            format: { type: string, enum: [FIT, GPX, TCX] }
+            format:
+              type: string
+              enum: [FIT, GPX, TCX, STRAVA]
+              description: STRAVA es el resumen y los streams de Strava guardados como original (ADR-030)
             sizeBytes: { type: integer, minimum: 1 }
             importedAt: { type: string, format: date-time }
     ActivityUpdate:
