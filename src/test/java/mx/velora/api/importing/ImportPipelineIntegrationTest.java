@@ -93,6 +93,7 @@ class ImportPipelineIntegrationTest {
     private String importAndProcess(byte[] content, String fileName, Map<String, String> params) throws Exception {
         var accepted = upload(content, fileName, params)
                 .andExpect(status().isAccepted())
+                .andExpect(OpenApiContract.multipartIsValid(CONTRACT))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
@@ -138,19 +139,11 @@ class ImportPipelineIntegrationTest {
     void gpxImportIsAcceptedProcessedAndQueryable() throws Exception {
         var accepted = upload(fixture("gpx/with-time-and-sensors.gpx"), "C:\\rutas\\mi rodada.gpx", Map.of())
                 .andExpect(status().isAccepted())
+                .andExpect(OpenApiContract.multipartIsValid(CONTRACT))
                 .andExpect(jsonPath("$.status").value("QUEUED"))
                 .andReturn()
                 .getResponse()
                 .getContentAsString();
-        // El validador no lee cuerpos multipart de MockMvc: se valida solo la respuesta.
-        var report = CONTRACT.validateResponse(
-                "/api/v1/activities/imports",
-                com.atlassian.oai.validator.model.Request.Method.POST,
-                com.atlassian.oai.validator.model.SimpleResponse.Builder.status(202)
-                        .withContentType("application/json")
-                        .withBody(accepted)
-                        .build());
-        assertThat(report.getMessages()).isEmpty();
         String jobId = JsonPath.read(accepted, "$.jobId");
         assertThat((String) JsonPath.read(accepted, "$.statusUrl")).isEqualTo("/api/v1/imports/" + jobId);
         assertThat(jdbc.sql("SELECT file_name FROM import_jobs")
