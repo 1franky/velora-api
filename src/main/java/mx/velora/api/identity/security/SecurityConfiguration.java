@@ -43,6 +43,11 @@ class SecurityConfiguration {
                         // publica en el host: ahí no hay sesión que pedir.
                         .requestMatchers("/healthz", "/actuator/**")
                         .permitAll()
+                        // Callback de webhooks de Strava (ADR-030): lo llama Strava, sin sesión. Solo acepta eventos de
+                        // la
+                        // suscripción propia y de atletas conectados.
+                        .requestMatchers("/api/v1/integrations/strava/webhook")
+                        .permitAll()
                         .requestMatchers("/error")
                         .permitAll()
                         .anyRequest()

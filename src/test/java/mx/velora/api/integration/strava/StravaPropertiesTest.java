@@ -13,27 +13,28 @@ class StravaPropertiesTest {
     private static final URI STRAVA = URI.create("https://www.strava.com");
     private static final URI RETURN = URI.create("https://velora.local/retorno");
     private static final StravaProperties.Sync SYNC = new StravaProperties.Sync(true, Duration.ofMinutes(15), 40);
+    private static final StravaProperties.Webhook WEBHOOK = new StravaProperties.Webhook(false, null);
 
     @Test
     void disabledNeedsNothing() {
-        assertThatCode(() ->
-                        new StravaProperties(false, null, null, null, null, STRAVA, Duration.ofMinutes(10), null, SYNC))
+        assertThatCode(() -> new StravaProperties(
+                        false, null, null, null, null, STRAVA, Duration.ofMinutes(10), null, SYNC, WEBHOOK))
                 .doesNotThrowAnyException();
     }
 
     @Test
     void enabledRequiresCredentialsKeyAndReturnUrl() {
-        assertThatThrownBy(() ->
-                        new StravaProperties(true, "id", null, KEY, RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC))
+        assertThatThrownBy(() -> new StravaProperties(
+                        true, "id", null, KEY, RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC, WEBHOOK))
                 .hasMessageContaining("client-secret");
-        assertThatThrownBy(() ->
-                        new StravaProperties(true, "id", "s", KEY, null, STRAVA, Duration.ofMinutes(10), null, SYNC))
+        assertThatThrownBy(() -> new StravaProperties(
+                        true, "id", "s", KEY, null, STRAVA, Duration.ofMinutes(10), null, SYNC, WEBHOOK))
                 .hasMessageContaining("redirect-uri");
         assertThatThrownBy(() -> new StravaProperties(
-                        true, "id", "s", "Y29ydGE=", RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC))
+                        true, "id", "s", "Y29ydGE=", RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC, WEBHOOK))
                 .hasMessageContaining("32 bytes");
-        assertThatCode(() ->
-                        new StravaProperties(true, "id", "s", KEY, RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC))
+        assertThatCode(() -> new StravaProperties(
+                        true, "id", "s", KEY, RETURN, STRAVA, Duration.ofMinutes(10), null, SYNC, WEBHOOK))
                 .doesNotThrowAnyException();
     }
 

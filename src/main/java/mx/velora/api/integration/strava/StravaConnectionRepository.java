@@ -205,4 +205,30 @@ class StravaConnectionRepository {
     private static @Nullable Instant instant(java.sql.@Nullable Timestamp value) {
         return value == null ? null : value.toInstant();
     }
+
+    /** Si la actividad se envió a importar (aunque después se haya marcado como borrada). */
+    boolean wasSubmitted(UUID userId, long stravaActivityId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM strava_sync_items
+                                       WHERE user_id = :user AND strava_activity_id = :id
+                                         AND import_job_id IS NOT NULL)
+                        """)
+                .param("user", userId)
+                .param("id", stravaActivityId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    /** Borrada en Strava: la sincronización ya no la trae, aunque no se hubiera visto antes. Conserva el trabajo. */
+    void markDeleted(UUID userId, long stravaActivityId, Instant now) {
+        jdbc.sql("""
+                        INSERT INTO strava_sync_items (user_id, strava_activity_id, outcome, created_at)
+                        VALUES (:user, :id, 'DELETED', :now)
+                        ON CONFLICT (user_id, strava_activity_id) DO UPDATE SET outcome = 'DELETED'
+                        """)
+                .param("user", userId)
+                .param("id", stravaActivityId)
+                .param("now", Timestamp.from(now))
+                .update();
+    }
 }

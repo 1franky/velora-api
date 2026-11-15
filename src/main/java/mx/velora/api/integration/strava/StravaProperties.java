@@ -21,6 +21,7 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param stateTtl vigencia del estado OAuth
  * @param backfillSince fecha desde la que la carga inicial trae actividades; sin ella, todo el historial
  * @param sync ejecución periódica de la sincronización
+ * @param webhook suscripción a los eventos de Strava
  */
 @ConfigurationProperties("velora.strava")
 public record StravaProperties(
@@ -32,7 +33,15 @@ public record StravaProperties(
         @DefaultValue("https://www.strava.com") URI baseUrl,
         @DefaultValue("PT10M") Duration stateTtl,
         @Nullable LocalDate backfillSince,
-        @DefaultValue Sync sync) {
+        @DefaultValue Sync sync,
+        @DefaultValue Webhook webhook) {
+
+    /**
+     * @param enabled si se registra la suscripción y se procesan los eventos (las pruebas los procesan a mano)
+     * @param callbackUrl URL pública de {@code /api/v1/integrations/strava/webhook}; sin ella no hay suscripción
+     */
+    public record Webhook(
+            @DefaultValue("true") boolean enabled, @Nullable URI callbackUrl) {}
 
     /**
      * @param enabled si corre sola (las pruebas la invocan a mano)

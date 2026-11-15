@@ -40,7 +40,8 @@ class HttpStravaAuthTest {
                         URI.create("https://strava.test"),
                         Duration.ofMinutes(10),
                         null,
-                        new StravaProperties.Sync(true, Duration.ofMinutes(15), 40)));
+                        new StravaProperties.Sync(true, Duration.ofMinutes(15), 40),
+                        new StravaProperties.Webhook(false, null)));
     }
 
     @Test

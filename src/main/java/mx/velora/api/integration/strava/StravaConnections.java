@@ -179,6 +179,13 @@ public class StravaConnections {
         return deleted;
     }
 
+    /** El usuario revocó el acceso desde Strava: se olvida la conexión sin llamar a Strava. Conserva lo importado. */
+    public void forget(UUID userId) {
+        if (connections.delete(userId)) {
+            log.info("Acceso revocado desde Strava; conexión eliminada");
+        }
+    }
+
     /** Access token vigente para llamar a la API de Strava; lo renueva si está por vencer. */
     @Transactional
     public String accessToken(UUID userId) {
