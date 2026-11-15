@@ -107,4 +107,29 @@ public class ActivityLookup {
                 .query(Long.class)
                 .single();
     }
+
+    /**
+     * Si el usuario ya tiene una actividad que empezó a menos de 2 min de {@code startedAt} y con distancia parecida
+     * (±3 %, mínimo 300 m). La sincronización con Strava la usa para no duplicar una rodada ya subida como archivo
+     * (ADR-030): el archivo del dispositivo trae más datos.
+     */
+    public boolean hasSimilar(UUID userId, Instant startedAt, @Nullable Double distanceMeters) {
+        return jdbc.sql("""
+                        SELECT EXISTS (
+                            SELECT 1 FROM activities
+                            WHERE user_id = :user
+                              AND started_at BETWEEN :from AND :to
+                              AND (CAST(:distance AS numeric) IS NULL OR distance_meters IS NULL
+                                   OR abs(distance_meters - CAST(:distance AS numeric))
+                                      <= greatest(300, 0.03 * CAST(:distance AS numeric))))
+                        """)
+                .param("user", userId)
+                .param("from", Timestamp.from(startedAt.minus(SIMILAR_START)))
+                .param("to", Timestamp.from(startedAt.plus(SIMILAR_START)))
+                .param("distance", distanceMeters, java.sql.Types.NUMERIC)
+                .query(Boolean.class)
+                .single();
+    }
+
+    private static final Duration SIMILAR_START = Duration.ofMinutes(2);
 }

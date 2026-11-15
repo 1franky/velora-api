@@ -1,9 +1,12 @@
 package mx.velora.api.integration.strava;
 
 import java.sql.Timestamp;
+import java.sql.Types;
 import java.time.Instant;
+import java.util.List;
 import java.util.Optional;
 import java.util.UUID;
+import org.jspecify.annotations.Nullable;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Repository;
 
@@ -117,5 +120,89 @@ class StravaConnectionRepository {
                         .param("user", userId)
                         .update()
                 > 0;
+    }
+
+    /** Avance de la sincronización de una conexión. */
+    record SyncState(
+            UUID userId,
+            Instant connectedAt,
+            @Nullable Instant syncedAfter,
+            @Nullable Instant backfillBefore,
+            boolean backfillDone,
+            @Nullable Instant lastSyncAt,
+            @Nullable String lastSyncError) {}
+
+    List<UUID> connectedUsers() {
+        return jdbc.sql("SELECT user_id FROM strava_connections")
+                .query(UUID.class)
+                .list();
+    }
+
+    Optional<SyncState> syncState(UUID userId) {
+        return jdbc.sql("""
+                        SELECT user_id, connected_at, synced_after, backfill_before, backfill_done, last_sync_at,
+                               last_sync_error
+                        FROM strava_connections WHERE user_id = :user
+                        """)
+                .param("user", userId)
+                .query((rs, n) -> new SyncState(
+                        rs.getObject("user_id", UUID.class),
+                        rs.getTimestamp("connected_at").toInstant(),
+                        instant(rs.getTimestamp("synced_after")),
+                        instant(rs.getTimestamp("backfill_before")),
+                        rs.getBoolean("backfill_done"),
+                        instant(rs.getTimestamp("last_sync_at")),
+                        rs.getString("last_sync_error")))
+                .optional();
+    }
+
+    void saveProgress(
+            UUID userId, @Nullable Instant syncedAfter, @Nullable Instant backfillBefore, boolean backfillDone) {
+        jdbc.sql("""
+                        UPDATE strava_connections SET synced_after = :after, backfill_before = :before,
+                            backfill_done = :done
+                        WHERE user_id = :user
+                        """)
+                .param("after", syncedAfter == null ? null : Timestamp.from(syncedAfter), Types.TIMESTAMP)
+                .param("before", backfillBefore == null ? null : Timestamp.from(backfillBefore), Types.TIMESTAMP)
+                .param("done", backfillDone)
+                .param("user", userId)
+                .update();
+    }
+
+    void finishRun(UUID userId, Instant at, @Nullable String error) {
+        jdbc.sql("UPDATE strava_connections SET last_sync_at = :at, last_sync_error = :error WHERE user_id = :user")
+                .param("at", Timestamp.from(at))
+                .param("error", error, Types.VARCHAR)
+                .param("user", userId)
+                .update();
+    }
+
+    boolean alreadySeen(UUID userId, long stravaActivityId) {
+        return jdbc.sql("""
+                        SELECT EXISTS (SELECT 1 FROM strava_sync_items WHERE user_id = :user AND strava_activity_id = :id)
+                        """)
+                .param("user", userId)
+                .param("id", stravaActivityId)
+                .query(Boolean.class)
+                .single();
+    }
+
+    void recordItem(UUID userId, long stravaActivityId, String outcome, @Nullable UUID importJobId, Instant now) {
+        jdbc.sql("""
+                        INSERT INTO strava_sync_items (user_id, strava_activity_id, outcome, import_job_id, created_at)
+                        VALUES (:user, :id, :outcome, :job, :now)
+                        ON CONFLICT (user_id, strava_activity_id) DO NOTHING
+                        """)
+                .param("user", userId)
+                .param("id", stravaActivityId)
+                .param("outcome", outcome)
+                .param("job", importJobId, Types.OTHER)
+                .param("now", Timestamp.from(now))
+                .update();
+    }
+
+    private static @Nullable Instant instant(java.sql.@Nullable Timestamp value) {
+        return value == null ? null : value.toInstant();
     }
 }

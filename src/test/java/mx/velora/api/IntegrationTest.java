@@ -28,7 +28,8 @@ import org.springframework.context.annotation.Import;
             "velora.strava.client-id=velora-pruebas",
             "velora.strava.client-secret=secreto-de-pruebas",
             "velora.strava.token-key=MDEyMzQ1Njc4OWFiY2RlZjAxMjM0NTY3ODlhYmNkZWY=",
-            "velora.strava.redirect-uri=https://velora.local/configuracion/strava/retorno"
+            "velora.strava.redirect-uri=https://velora.local/configuracion/strava/retorno",
+            "velora.strava.sync.enabled=false"
         })
 @AutoConfigureMockMvc
 @Import({TestcontainersConfiguration.class, WhoAmIController.class, FakeStravaAuth.Config.class})

@@ -32,10 +32,16 @@ public class ImportJobRepository {
             int attemptCount,
             int maxAttempts,
             String kind,
-            @Nullable UUID activityId) {
+            @Nullable UUID activityId,
+            String source) {
 
         public boolean isReprocess() {
             return "REPROCESS".equals(kind);
+        }
+
+        /** Creado por la sincronización con Strava: el original es un {@code StravaActivityDocument}. */
+        public boolean fromStrava() {
+            return "STRAVA".equals(source);
         }
     }
 
@@ -68,16 +74,59 @@ public class ImportJobRepository {
             @Nullable String activityTitle,
             int maxAttempts,
             Instant now) {
+        insert(
+                id,
+                userId,
+                "UPLOAD",
+                fileName,
+                storageKey,
+                sha256,
+                sizeBytes,
+                bikeId,
+                deviceId,
+                activityTitle,
+                maxAttempts,
+                now);
+    }
+
+    /** Trabajo creado por la sincronización con Strava (ADR-030). */
+    public void insertStrava(
+            UUID id,
+            UUID userId,
+            String fileName,
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            int maxAttempts,
+            Instant now) {
+        insert(id, userId, "STRAVA", fileName, storageKey, sha256, sizeBytes, null, null, null, maxAttempts, now);
+    }
+
+    /** @param source {@code UPLOAD} o {@code STRAVA} */
+    void insert(
+            UUID id,
+            UUID userId,
+            String source,
+            String fileName,
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            @Nullable UUID bikeId,
+            @Nullable UUID deviceId,
+            @Nullable String activityTitle,
+            int maxAttempts,
+            Instant now) {
         jdbc.sql("""
                         INSERT INTO import_jobs (
-                            id, user_id, status, stage, file_name, storage_key, sha256, file_size_bytes,
+                            id, user_id, source, status, stage, file_name, storage_key, sha256, file_size_bytes,
                             bike_id, device_id, activity_title, max_attempts, next_attempt_at, created_at, updated_at)
                         VALUES (
-                            :id, :user, 'QUEUED', 'STORED', :name, :key, :sha, :size,
+                            :id, :user, :source, 'QUEUED', 'STORED', :name, :key, :sha, :size,
                             :bike, :device, :title, :maxAttempts, :now, :now, :now)
                         """)
                 .param("id", id)
                 .param("user", userId)
+                .param("source", source)
                 .param("name", fileName)
                 .param("key", storageKey)
                 .param("sha", sha256)
@@ -115,10 +164,14 @@ public class ImportJobRepository {
             Instant now) {
         jdbc.sql("""
                         INSERT INTO import_jobs (
-                            id, user_id, kind, status, stage, file_name, storage_key, sha256, file_size_bytes,
+                            id, user_id, kind, source, status, stage, file_name, storage_key, sha256, file_size_bytes,
                             bike_id, activity_id, max_attempts, next_attempt_at, created_at, updated_at)
                         VALUES (
-                            :id, :user, 'REPROCESS', 'QUEUED', 'STORED', 'reprocesamiento', :key, :sha, :size,
+                            :id, :user, 'REPROCESS',
+                            -- Un reproceso lee el original con el mismo parser que la importación.
+                            (SELECT CASE WHEN source_type = 'STRAVA' THEN 'STRAVA' ELSE 'UPLOAD' END
+                             FROM activities WHERE id = :activity),
+                            'QUEUED', 'STORED', 'reprocesamiento', :key, :sha, :size,
                             :bike, :activity, :maxAttempts, :now, :now, :now)
                         """)
                 .param("id", id)
@@ -150,7 +203,7 @@ public class ImportJobRepository {
                             LIMIT :batch
                             FOR UPDATE SKIP LOCKED)
                         RETURNING j.id, j.user_id, j.storage_key, j.sha256, j.file_size_bytes, j.bike_id, j.device_id,
-                                  j.activity_title, j.attempt_count, j.max_attempts, j.kind, j.activity_id
+                                  j.activity_title, j.attempt_count, j.max_attempts, j.kind, j.activity_id, j.source
                         """)
                 .param("lockedUntil", Timestamp.from(now.plus(lockDuration)))
                 .param("now", Timestamp.from(now))
@@ -167,7 +220,8 @@ public class ImportJobRepository {
                         rs.getInt("attempt_count"),
                         rs.getInt("max_attempts"),
                         rs.getString("kind"),
-                        rs.getObject("activity_id", UUID.class)))
+                        rs.getObject("activity_id", UUID.class),
+                        rs.getString("source")))
                 .list();
     }
 

@@ -4,5 +4,7 @@ package mx.velora.api.importing;
 public enum FileFormat {
     FIT,
     GPX,
-    TCX
+    TCX,
+    /** Documento {@link StravaActivityDocument}; solo para trabajos creados por la sincronización (ADR-030). */
+    STRAVA
 }

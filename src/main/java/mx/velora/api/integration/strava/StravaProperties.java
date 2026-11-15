@@ -2,6 +2,7 @@ package mx.velora.api.integration.strava;
 
 import java.net.URI;
 import java.time.Duration;
+import java.time.LocalDate;
 import java.util.Base64;
 import org.jspecify.annotations.Nullable;
 import org.springframework.boot.context.properties.ConfigurationProperties;
@@ -18,6 +19,8 @@ import org.springframework.boot.context.properties.bind.DefaultValue;
  * @param redirectUri URL de la web que recibe el retorno de la autorización
  * @param baseUrl raíz de Strava (OAuth y API); configurable para pruebas
  * @param stateTtl vigencia del estado OAuth
+ * @param backfillSince fecha desde la que la carga inicial trae actividades; sin ella, todo el historial
+ * @param sync ejecución periódica de la sincronización
  */
 @ConfigurationProperties("velora.strava")
 public record StravaProperties(
@@ -27,7 +30,19 @@ public record StravaProperties(
         @Nullable String tokenKey,
         @Nullable URI redirectUri,
         @DefaultValue("https://www.strava.com") URI baseUrl,
-        @DefaultValue("PT10M") Duration stateTtl) {
+        @DefaultValue("PT10M") Duration stateTtl,
+        @Nullable LocalDate backfillSince,
+        @DefaultValue Sync sync) {
+
+    /**
+     * @param enabled si corre sola (las pruebas la invocan a mano)
+     * @param interval espera entre ejecuciones; coincide con la ventana de 15 min de la cuota de Strava
+     * @param perRun actividades nuevas que se procesan como máximo por ejecución
+     */
+    public record Sync(
+            @DefaultValue("true") boolean enabled,
+            @DefaultValue("PT15M") Duration interval,
+            @DefaultValue("40") int perRun) {}
 
     public StravaProperties {
         if (enabled) {

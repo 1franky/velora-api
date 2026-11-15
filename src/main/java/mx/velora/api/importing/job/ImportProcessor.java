@@ -125,10 +125,11 @@ class ImportProcessor {
         try (var in = store.open(new StoredFile(job.storageKey(), job.sha256(), job.sizeBytes()))) {
             // El detector de formato usa SequenceInputStream, que cierra cada stream al agotarlo; el cierre real
             // lo hace este try.
-            var imported = reader.read(new java.io.FilterInputStream(in) {
+            var unclosable = new java.io.FilterInputStream(in) {
                 @Override
                 public void close() {}
-            });
+            };
+            var imported = job.fromStrava() ? reader.readStrava(unclosable) : reader.read(unclosable);
             // El SHA-256 se verifica al llegar al final: leer lo que el parser no consumió.
             in.transferTo(OutputStream.nullOutputStream());
             return imported;
