@@ -98,4 +98,13 @@ public class ActivityLookup {
                             rs.getDouble("max_lon")
                         });
     }
+
+    /** Cuántas actividades del usuario vienen de una fuente ({@code FIT}, {@code GPX}, {@code TCX} o {@code STRAVA}). */
+    public long countBySource(UUID userId, String sourceType) {
+        return jdbc.sql("SELECT count(*) FROM activities WHERE user_id = :user AND source_type = :source")
+                .param("user", userId)
+                .param("source", sourceType)
+                .query(Long.class)
+                .single();
+    }
 }

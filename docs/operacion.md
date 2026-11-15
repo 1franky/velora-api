@@ -102,6 +102,23 @@ Las importaciones que estaban en proceso se recuperan solas al arrancar: los tra
 - **Dependabot:** cada lunes abre PRs de actualización en los tres repositorios. Integrarlos solo si su CI pasa. Los de la API y la web se despliegan solos.
 - **Límite de GitHub:** suspende los workflows programados de un repositorio público tras 60 días sin actividad. Si Velora pasa dos meses sin cambios, reactívalo en **Actions → Salud de producción → Enable workflow**.
 
+## Strava
+
+El conector de Strava (ADR-030) está apagado por omisión. **Incumple los términos de la API de Strava por decisión del propietario**: Strava puede revocar el acceso en cualquier momento. Para encenderlo:
+
+1. Crea una app en https://www.strava.com/settings/api. En *Authorization Callback Domain* pon `velora.franciscolopez.uk`.
+2. En el `.env` de `velora-api` agrega:
+   ```bash
+   VELORA_STRAVA_ENABLED=true
+   VELORA_STRAVA_CLIENT_ID=<Client ID de la app>
+   VELORA_STRAVA_CLIENT_SECRET=<Client Secret>
+   VELORA_STRAVA_TOKEN_KEY=<salida de: openssl rand -base64 32>
+   ```
+   Guarda la clave de tokens en tu gestor de contraseñas. Si se pierde, hay que volver a conectar Strava.
+3. `docker compose -f compose.deploy.yaml up -d api`.
+
+Para apagarlo: desconecta Strava desde la web (opcionalmente borrando lo importado), pon `VELORA_STRAVA_ENABLED=false` y reinicia la API.
+
 ## Tareas periódicas
 
 | Cada | Tarea |

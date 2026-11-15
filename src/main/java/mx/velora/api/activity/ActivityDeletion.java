@@ -44,6 +44,38 @@ public class ActivityDeletion {
         if (deleted == 0) {
             return false;
         }
+        deleteOriginalsAfterCommit(storageKeys);
+        return true;
+    }
+
+    /**
+     * Borra todas las actividades del usuario que vienen de una fuente, p. ej. las de Strava al desconectarlo
+     * (ADR-030).
+     *
+     * @return cuántas se borraron
+     */
+    @Transactional
+    public int deleteAllFromSource(UUID userId, String sourceType) {
+        var storageKeys = jdbc.sql("""
+                        SELECT f.storage_key FROM activity_files f JOIN activities a ON a.id = f.activity_id
+                        WHERE a.user_id = :user AND a.source_type = :source
+                        """)
+                .param("user", userId)
+                .param("source", sourceType)
+                .query(String.class)
+                .list();
+        var deleted = jdbc.sql("DELETE FROM activities WHERE user_id = :user AND source_type = :source")
+                .param("user", userId)
+                .param("source", sourceType)
+                .update();
+        deleteOriginalsAfterCommit(storageKeys);
+        return deleted;
+    }
+
+    private void deleteOriginalsAfterCommit(java.util.List<String> storageKeys) {
+        if (storageKeys.isEmpty()) {
+            return;
+        }
         TransactionSynchronizationManager.registerSynchronization(new TransactionSynchronization() {
             @Override
             public void afterCommit() {
@@ -52,14 +84,10 @@ public class ActivityDeletion {
                         store.delete(key);
                     } catch (IOException | RuntimeException e) {
                         // La actividad ya no existe; el archivo queda huérfano y no es accesible por la API.
-                        log.warn(
-                                "No se pudo borrar el original de la actividad {}",
-                                activityId,
-                                RedactedException.of(e));
+                        log.warn("No se pudo borrar el original de una actividad borrada", RedactedException.of(e));
                     }
                 }
             }
         });
-        return true;
     }
 }

@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.20.0
+  version: 1.21.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /healthz.
@@ -146,6 +146,85 @@ paths:
             application/problem+json:
               schema: { $ref: '#/components/schemas/Problem' }
         '429': { $ref: '#/components/responses/TooManyRequests' }
+  /integrations/strava:
+    get:
+      summary: Estado del conector de Strava
+      description: >
+        Si el conector está apagado en el servidor, responde enabled=false y el cliente debe ocultar la opción
+        (ADR-030).
+      operationId: getStravaStatus
+      responses:
+        '200':
+          description: Estado de la conexión
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StravaStatus' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /integrations/strava/authorization:
+    post:
+      summary: Iniciar la autorización con Strava
+      description: >
+        Devuelve la URL de autorización de Strava con un estado de un solo uso que vence en 10 minutos. El cliente
+        redirige al usuario ahí; Strava vuelve a la URL de retorno configurada con code, state y scope.
+      operationId: startStravaAuthorization
+      responses:
+        '200':
+          description: URL a la que se redirige al usuario
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StravaAuthorization' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /integrations/strava/connection:
+    post:
+      summary: Completar la conexión con Strava
+      description: >
+        Recibe lo que Strava devolvió en el retorno. Exige el permiso activity:read_all. Los tokens se guardan
+        cifrados y nunca se devuelven.
+      operationId: connectStrava
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema: { $ref: '#/components/schemas/StravaConnectionRequest' }
+      responses:
+        '200':
+          description: Cuenta conectada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StravaStatus' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: La cuenta de Strava ya está conectada a otro usuario
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '502':
+          description: Strava no respondió
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    delete:
+      summary: Desconectar Strava
+      description: >
+        Revoca el acceso en Strava y borra la conexión. Con deleteActivities=true borra también todas las
+        actividades importadas de Strava. Idempotente.
+      operationId: disconnectStrava
+      parameters:
+        - name: deleteActivities
+          in: query
+          required: false
+          schema: { type: boolean, default: false }
+      responses:
+        '200':
+          description: Desconectado
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/StravaDisconnection' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
   /bikes:
     get:
       summary: Listar bicicletas
@@ -887,6 +966,36 @@ components:
         errorId:
           type: string
           description: Identificador para correlacionar errores 500 con los logs. Es el X-Request-Id de la solicitud.
+    StravaStatus:
+      type: object
+      additionalProperties: false
+      required: [enabled, connected, athleteId, connectedAt, importedActivities]
+      properties:
+        enabled: { type: boolean, description: Si el conector está encendido en el servidor }
+        connected: { type: boolean }
+        athleteId: { type: [integer, 'null'], format: int64 }
+        connectedAt: { type: [string, 'null'], format: date-time }
+        importedActivities: { type: integer, format: int64, minimum: 0, description: Actividades importadas de Strava }
+    StravaAuthorization:
+      type: object
+      additionalProperties: false
+      required: [authorizationUrl]
+      properties:
+        authorizationUrl: { type: string, format: uri }
+    StravaConnectionRequest:
+      type: object
+      additionalProperties: false
+      required: [code, state, scope]
+      properties:
+        code: { type: string, minLength: 1, maxLength: 200 }
+        state: { type: string, minLength: 1, maxLength: 200 }
+        scope: { type: string, minLength: 1, maxLength: 200, description: Permisos concedidos, separados por comas }
+    StravaDisconnection:
+      type: object
+      additionalProperties: false
+      required: [deletedActivities]
+      properties:
+        deletedActivities: { type: integer, minimum: 0 }
     LoginRequest:
       type: object
       additionalProperties: false
