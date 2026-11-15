@@ -68,22 +68,28 @@ class StravaConfiguration {
         }
     }
 
-    /** Ejecución periódica; solo con el conector encendido y {@code velora.strava.sync.enabled} (las pruebas no). */
+    /**
+     * Ejecución periódica con el conector encendido; {@code velora.strava.sync.enabled=false} la apaga (las pruebas).
+     * Se revisa en el método y no en la condición: {@code @ConditionalOnProperty} no ve el {@code true} por omisión
+     * de {@link StravaProperties.Sync}, y sin la propiedad explícita el bean no se creaba.
+     */
     @Component
-    @ConditionalOnProperty(
-            name = {"velora.strava.enabled", "velora.strava.sync.enabled"},
-            havingValue = "true")
+    @ConditionalOnProperty(name = "velora.strava.enabled", havingValue = "true")
     static class SyncScheduler {
 
         private final StravaSync sync;
+        private final StravaProperties properties;
 
-        SyncScheduler(StravaSync sync) {
+        SyncScheduler(StravaSync sync, StravaProperties properties) {
             this.sync = sync;
+            this.properties = properties;
         }
 
         @Scheduled(fixedDelayString = "${velora.strava.sync.interval:PT15M}", initialDelayString = "PT1M")
         void run() {
-            sync.syncAll();
+            if (properties.sync().enabled()) {
+                sync.syncAll();
+            }
         }
     }
 }
