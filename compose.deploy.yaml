@@ -28,6 +28,12 @@ services:
       VELORA_STORAGE_ORIGINALS_PATH: /data/originals
       # Un objeto JSON (ECS) por línea, con requestId e importJobId como campos. Ver docs/operacion.md.
       LOGGING_STRUCTURED_FORMAT_CONSOLE: ecs
+      # Conector de Strava (ADR-030), apagado por omisión. Ver docs/operacion.md → Strava.
+      VELORA_STRAVA_ENABLED: ${VELORA_STRAVA_ENABLED:-false}
+      VELORA_STRAVA_CLIENT_ID: ${VELORA_STRAVA_CLIENT_ID:-}
+      VELORA_STRAVA_CLIENT_SECRET: ${VELORA_STRAVA_CLIENT_SECRET:-}
+      VELORA_STRAVA_TOKEN_KEY: ${VELORA_STRAVA_TOKEN_KEY:-}
+      VELORA_STRAVA_REDIRECT_URI: https://velora.franciscolopez.uk/configuracion/strava/retorno
     # Solo el puerto público. Actuator (métricas) escucha en 8081, que no se publica: solo es alcanzable dentro de
     # velora-net.
     ports:
