@@ -36,6 +36,8 @@ services:
       VELORA_STRAVA_REDIRECT_URI: https://velora.franciscolopez.uk/configuracion/strava/retorno
       # Vacío: la carga inicial trae todo el historial. Con fecha (AAAA-MM-DD), solo desde ese día.
       VELORA_STRAVA_BACKFILL_SINCE: ${VELORA_STRAVA_BACKFILL_SINCE:-}
+      # Callback público de webhooks; la suscripción se registra sola al arrancar.
+      VELORA_STRAVA_WEBHOOK_CALLBACK_URL: https://velora-api.franciscolopez.uk/api/v1/integrations/strava/webhook
     # Solo el puerto público. Actuator (métricas) escucha en 8081, que no se publica: solo es alcanzable dentro de
     # velora-net.
     ports:

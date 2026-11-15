@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.22.0
+  version: 1.23.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /healthz.
@@ -224,6 +224,48 @@ paths:
             application/json:
               schema: { $ref: '#/components/schemas/StravaDisconnection' }
         '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /integrations/strava/webhook:
+    get:
+      summary: Validación de la suscripción de webhooks (la llama Strava)
+      description: >
+        Strava confirma la suscripción con hub.mode=subscribe, el verify token y un challenge que debe devolverse.
+        Sin sesión (ADR-030).
+      operationId: validateStravaWebhook
+      security: []
+      parameters:
+        - { name: hub.mode, in: query, required: false, schema: { type: string } }
+        - { name: hub.verify_token, in: query, required: false, schema: { type: string } }
+        - { name: hub.challenge, in: query, required: false, schema: { type: string } }
+      responses:
+        '200':
+          description: Token correcto; se devuelve el challenge
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [hub.challenge]
+                properties:
+                  hub.challenge: { type: string }
+        '403': { description: Token incorrecto }
+        '404': { $ref: '#/components/responses/NotFound' }
+    post:
+      summary: Evento de Strava (lo llama Strava)
+      description: >
+        Se responde 200 de inmediato y el evento se procesa después. Solo se guardan los eventos de la suscripción
+        propia y de atletas conectados; el resto se ignora con 200 para que Strava no reintente. Sin sesión.
+      operationId: receiveStravaWebhook
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              description: Evento de Strava; puede traer campos nuevos
+              additionalProperties: true
+      responses:
+        '200': { description: Recibido }
         '404': { $ref: '#/components/responses/NotFound' }
   /bikes:
     get:

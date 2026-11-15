@@ -133,6 +133,17 @@ docker exec velora-postgres psql -U velora -d velora -c "select backfill_done, b
 
 `last_sync_error = AUTH_REVOKED` significa que hay que volver a conectar Strava desde la web. `STRAVA_UNAVAILABLE` se reintenta solo.
 
+**Webhooks:** al arrancar, la API registra sola su suscripción a los eventos de Strava en `https://velora-api.franciscolopez.uk/api/v1/integrations/strava/webhook`. Strava la valida en ese momento; el log dice "Suscripción a webhooks de Strava creada" o "vigente". Qué hace con cada evento:
+
+- Una rodada nueva dispara la sincronización: llega en menos de un minuto, sin esperar los 15.
+- Un cambio de nombre en Strava cambia el título en Velora.
+- **Una rodada borrada en Strava se borra en Velora** y no se vuelve a importar.
+- Si revocas el acceso desde Strava, se olvida la conexión. Lo importado se conserva; bórralo desde la web si quieres.
+
+```bash
+docker exec velora-postgres psql -U velora -d velora -c "select aspect_type, count(*) filter (where processed_at is null) as pendientes, count(*) from strava_webhook_events group by 1"
+```
+
 Para apagarlo: desconecta Strava desde la web (opcionalmente borrando lo importado), pon `VELORA_STRAVA_ENABLED=false` y reinicia la API.
 
 ## Tareas periódicas
