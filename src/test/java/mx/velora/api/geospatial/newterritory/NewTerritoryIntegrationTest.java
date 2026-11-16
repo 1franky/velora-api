@@ -159,6 +159,35 @@ class NewTerritoryIntegrationTest {
     }
 
     @Test
+    void theRouteChunksFollowTheTrack() {
+        var id = ride(1_000, 0, "2026-11-01T14:00:00Z");
+
+        // El trigger parte el recorrido al insertarlo: varios trozos que suman el mismo trazo.
+        var chunks = jdbc.sql("SELECT count(*) FROM activity_route_chunks WHERE activity_id = :id")
+                .param("id", id)
+                .query(Long.class)
+                .single();
+        assertThat(chunks).isGreaterThan(1);
+        var lengths = jdbc.sql("""
+                        SELECT (SELECT sum(ST_Length(geom::geography)) FROM activity_route_chunks WHERE activity_id = :id),
+                               (SELECT ST_Length(route_geom::geography) FROM activity_tracks WHERE activity_id = :id)""")
+                .param("id", id)
+                .query((rs, n) -> new double[] {rs.getDouble(1), rs.getDouble(2)})
+                .single();
+        assertThat(lengths[0]).isCloseTo(lengths[1], org.assertj.core.data.Offset.offset(0.5));
+
+        // Al borrar el recorrido (borrado o reproceso de la actividad) se van sus trozos.
+        jdbc.sql("DELETE FROM activity_tracks WHERE activity_id = :id")
+                .param("id", id)
+                .update();
+        assertThat(jdbc.sql("SELECT count(*) FROM activity_route_chunks WHERE activity_id = :id")
+                        .param("id", id)
+                        .query(Long.class)
+                        .single())
+                .isZero();
+    }
+
+    @Test
     void rejectsUnknownActivitiesAndToleranceOutOfRange() throws Exception {
         var id = ride(200, 0, "2026-11-08T14:00:00Z");
         mvc.perform(session.authorize(get("/api/v1/geo/new-territory?activityId=" + UUID.randomUUID())))

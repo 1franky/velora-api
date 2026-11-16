@@ -5,10 +5,13 @@ import java.util.Optional;
 import java.util.UUID;
 import org.springframework.jdbc.core.simple.JdbcClient;
 import org.springframework.stereotype.Service;
+import org.springframework.transaction.PlatformTransactionManager;
+import org.springframework.transaction.support.TransactionTemplate;
 
 /**
  * Lee el recorrido de una actividad (recortado por la privacidad, ADR-016) muestreado cada {@value #SAMPLE_METERS} m
- * y marca cada muestra según las rodadas anteriores del mismo usuario (recorridos completos: sí pasaste por ahí).
+ * y marca cada muestra según las rodadas anteriores del mismo usuario (recorridos completos, en trozos: sí pasaste por
+ * ahí).
  */
 @Service
 class NewTerritoryQueries {
@@ -20,9 +23,12 @@ class NewTerritoryQueries {
     record Subject(int privacyMeters, double sampleSpacingMeters, long earlierActivities) {}
 
     private final JdbcClient jdbc;
+    private final TransactionTemplate transactions;
 
-    NewTerritoryQueries(JdbcClient jdbc) {
+    NewTerritoryQueries(JdbcClient jdbc, PlatformTransactionManager transactionManager) {
         this.jdbc = jdbc;
+        this.transactions = new TransactionTemplate(transactionManager);
+        this.transactions.setReadOnly(true);
     }
 
     /** Vacío si la actividad no existe, es de otro usuario o no tiene recorrido. */
@@ -44,10 +50,21 @@ class NewTerritoryQueries {
 
     /**
      * Muestras en orden. Una muestra es nueva si ninguna rodada que empezó antes pasa a menos de
-     * {@code toleranceMeters}. El índice GiST deja solo las rodadas cuyo recuadro toca el de esta, y la distancia se mide
-     * en metros planos con una escala local (equirectangular) en la latitud del recorrido.
+     * {@code toleranceMeters}. Se compara contra los trozos del recorrido de las demás rodadas
+     * ({@code activity_route_chunks}, ADR-031): el índice GiST deja solo los que pasan cerca de cada muestra, y la
+     * distancia se mide en metros planos con una escala local (equirectangular) en la latitud del recorrido.
+     *
+     * <p>Sin JIT: el plan parece caro (miles de búsquedas en el índice) y PostgreSQL gastaría ~0.4 s compilándolo para
+     * una consulta que tarda menos que eso.
      */
     List<NewTerritory.Sample> samples(UUID activityId, int privacyMeters, double toleranceMeters) {
+        return transactions.execute(status -> {
+            jdbc.sql("SET LOCAL jit = off").update();
+            return query(activityId, privacyMeters, toleranceMeters);
+        });
+    }
+
+    private List<NewTerritory.Sample> query(UUID activityId, int privacyMeters, double toleranceMeters) {
         return jdbc.sql("""
                         WITH me AS (
                             SELECT a.id, a.user_id, a.started_at,
@@ -65,11 +82,6 @@ class NewTerritoryQueries {
                             SELECT 111412.84 * cos(phi) - 93.5 * cos(3 * phi) AS kx,
                                    111132.954 - 559.822 * cos(2 * phi) + 1.175 * cos(4 * phi) AS ky
                             FROM me),
-                        earlier AS MATERIALIZED (
-                            SELECT ST_Scale(ot.route_geom, scale.kx, scale.ky) AS g
-                            FROM activities o JOIN activity_tracks ot ON ot.activity_id = o.id, me, scale
-                            WHERE o.user_id = me.user_id AND o.started_at < me.started_at AND me.g IS NOT NULL
-                              AND ot.route_geom && ST_Expand(me.g, :margin)),
                         parts AS (
                             SELECT (d).path[1] AS part, (d).geom AS line
                             FROM (SELECT ST_Dump(g) AS d FROM me WHERE g IS NOT NULL) s),
@@ -77,20 +89,37 @@ class NewTerritoryQueries {
                             SELECT part, (dp).path[1] AS idx, (dp).geom AS p
                             FROM (SELECT part, ST_DumpPoints(ST_Segmentize(line::geography, :spacing)::geometry) AS dp
                                   FROM parts) s),
-                        flagged AS (
-                            SELECT pt.part, pt.idx, pt.p, ST_Scale(pt.p, scale.kx, scale.ky) AS m
-                            FROM points pt, scale)
-                        SELECT part, ST_Y(p) AS lat, ST_X(p) AS lon,
-                               NOT EXISTS (SELECT 1 FROM earlier e WHERE ST_DWithin(e.g, m, :tolerance)) AS fresh,
-                               (NOT EXISTS (SELECT 1 FROM earlier e WHERE ST_DWithin(e.g, m, :tolerance))
-                                AND EXISTS (SELECT 1 FROM earlier e WHERE ST_DWithin(e.g, m, 2 * :tolerance))) AS near
-                        FROM flagged
-                        ORDER BY part, idx""")
+                        -- Materializado: con las muestras ya calculadas, cada búsqueda de abajo usa el índice.
+                        flagged AS MATERIALIZED (
+                            SELECT pt.part, pt.idx, pt.p, ST_Scale(pt.p, scale.kx, scale.ky) AS m, scale.kx, scale.ky,
+                                   me.user_id, me.started_at
+                            FROM points pt, scale, me)
+                        SELECT f.part, ST_Y(f.p) AS lat, ST_X(f.p) AS lon,
+                               known.hit IS NULL AS fresh,
+                               known.hit IS NULL AND close.hit IS NOT NULL AS near
+                        FROM flagged f
+                        LEFT JOIN LATERAL (
+                            SELECT 1 AS hit
+                            FROM activity_route_chunks c JOIN activities o ON o.id = c.activity_id
+                            WHERE c.geom && ST_Expand(f.p, :margin)
+                              AND o.user_id = f.user_id AND o.started_at < f.started_at
+                              AND ST_DWithin(ST_Scale(c.geom, f.kx, f.ky), f.m, :tolerance)
+                            LIMIT 1) known ON true
+                        -- Solo para las nuevas: ¿alguna rodada pasa a menos del doble? (resultado dudoso)
+                        LEFT JOIN LATERAL (
+                            SELECT 1 AS hit
+                            FROM activity_route_chunks c JOIN activities o ON o.id = c.activity_id
+                            WHERE known.hit IS NULL
+                              AND c.geom && ST_Expand(f.p, :margin)
+                              AND o.user_id = f.user_id AND o.started_at < f.started_at
+                              AND ST_DWithin(ST_Scale(c.geom, f.kx, f.ky), f.m, 2 * :tolerance)
+                            LIMIT 1) close ON true
+                        ORDER BY f.part, f.idx""")
                 .param("id", activityId)
                 .param("privacy", privacyMeters)
                 .param("spacing", (double) SAMPLE_METERS)
                 .param("tolerance", toleranceMeters)
-                // Recuadro del recorrido ampliado ~2 tolerancias (en grados, con holgura para la latitud).
+                // Recuadro de la muestra ampliado ~3 tolerancias (en grados, con holgura para la longitud).
                 .param("margin", 3 * toleranceMeters / METERS_PER_DEGREE)
                 .query((rs, n) -> new NewTerritory.Sample(
                         rs.getInt("part"),
