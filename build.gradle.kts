@@ -37,7 +37,7 @@ dependencies {
     // Garmin FIT SDK: FIT Protocol License (propietaria). No redistribuir su código fuente; ver ADR-009.
     implementation("com.garmin:fit:21.221.0")
     // Requerido por Argon2PasswordEncoder (ADR-010). Licencia MIT.
-    implementation("org.bouncycastle:bcprov-jdk18on:1.86")
+    implementation("org.bouncycastle:bcprov-jdk18on:1.87")
     runtimeOnly("org.postgresql:postgresql")
 
     testImplementation("org.springframework.boot:spring-boot-starter-actuator-test")
