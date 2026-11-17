@@ -8,6 +8,15 @@ El mapa base no se respalda porque se regenera con `pnpm basemap` en `velora-web
 
 **Cómo:** con [restic](https://restic.net), cifrado antes de salir del VPS, hacia un bucket privado de Cloudflare R2. Corre todos los días a las 3:30, hora del centro de México. Se conservan 7 respaldos diarios, 4 semanales y 6 mensuales. Los domingos, además, se lee una muestra del 5 % para detectar corrupción. Si algo falla, se abre un issue con la etiqueta `respaldo` en este repositorio.
 
+**Tope de tamaño:** con `VELORA_MAX_REPO_GB` (2.5 GB en el ejemplo), después de la retención se mide el repositorio con `restic stats --mode raw-data`. Al pasar el 80 % (`VELORA_WARN_REPO_PCT`) y al pasar el tope se abre un issue con la etiqueta `respaldo`, sin repetirlo mientras siga abierto. **Solo avisa:**
+- no detiene el respaldo, porque se perdería el RPO;
+- no recorta la retención, porque podría borrar el respaldo bueno de antes de un error.
+
+Al recibir el aviso:
+- revisa por qué creció (`restic stats --mode raw-data`, `restic snapshots`);
+- después, baja `VELORA_KEEP_*` o sube el tope en `/etc/velora/respaldo.env`;
+- cierra el issue.
+
 - **RPO:** 24 horas. Se pierde a lo más lo importado desde el último respaldo, y los archivos originales siguen en tu teléfono o tu computadora.
 - **RTO:** menos de 1 hora con el volumen actual. Lo que más tarda es levantar el VPS; restaurar unos cientos de MB toma minutos.
 

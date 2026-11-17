@@ -46,8 +46,43 @@ docker volume create "$id-originales" >/dev/null
 docker run --rm -v "$id-originales:/data" alpine:3.22 sh -c \
   'mkdir -p /data/2026/11 && head -c 300000 /dev/urandom > /data/2026/11/a.fit && echo "<gpx/>" > /data/2026/11/b.gpx'
 
-echo "→ Respaldo"
-VELORA_PG_CONTAINER="$id-origen" VELORA_ORIGINALS_VOLUME="$id-originales" ops/respaldos/respaldar.sh
+# Un GitHub falso para las alertas: guarda los issues que recibe y los devuelve al listarlos.
+cat >"$work/github.py" <<'PY'
+import json, sys
+from http.server import BaseHTTPRequestHandler, HTTPServer
+issues = []
+class H(BaseHTTPRequestHandler):
+    def log_message(self, *a): pass
+    def reply(self, code, data):
+        body = json.dumps(data, indent=2, ensure_ascii=False).encode()  # como GitHub: UTF-8 sin escapar
+        self.send_response(code); self.send_header("Content-Type", "application/json"); self.end_headers(); self.wfile.write(body)
+    def do_GET(self): self.reply(200, issues)
+    def do_POST(self):
+        issue = json.loads(self.rfile.read(int(self.headers["Content-Length"])))  # falla si el JSON no es válido
+        issues.append(issue)
+        with open(sys.argv[2], "a") as f: f.write(issue["title"] + "\n")
+        self.reply(201, issue)
+s = HTTPServer(("127.0.0.1", 0), H)
+open(sys.argv[1], "w").write(str(s.server_port))
+s.serve_forever()
+PY
+python3 "$work/github.py" "$work/puerto" "$work/issues.txt" &
+github_pid=$!
+trap 'kill $github_pid 2>/dev/null || true; cleanup' EXIT
+for _ in $(seq 1 50); do [[ -s "$work/puerto" ]] && break; sleep 0.1; done
+VELORA_ALERT_API="http://127.0.0.1:$(cat "$work/puerto")"
+export VELORA_ALERT_API VELORA_ALERT_REPO=velora/prueba VELORA_ALERT_TOKEN=prueba
+
+echo "→ Respaldo, con un tope de tamaño diminuto: avisa pero termina bien"
+VELORA_PG_CONTAINER="$id-origen" VELORA_ORIGINALS_VOLUME="$id-originales" VELORA_MAX_REPO_GB=0.0001 \
+  ops/respaldos/respaldar.sh | tee "$work/respaldo.log"
+grep -q "pasó el tope de tamaño" "$work/respaldo.log" || { echo "No avisó del tope de tamaño" >&2; exit 1; }
+[[ "$(wc -l <"$work/issues.txt" | tr -d ' ')" == 1 ]] || { echo "Se esperaba un issue de tamaño" >&2; exit 1; }
+
+echo "→ Un segundo respaldo sobre el tope no repite el issue abierto"
+VELORA_PG_CONTAINER="$id-origen" VELORA_ORIGINALS_VOLUME="$id-originales" VELORA_MAX_REPO_GB=0.0001 \
+  ops/respaldos/respaldar.sh >/dev/null
+[[ "$(wc -l <"$work/issues.txt" | tr -d ' ')" == 1 ]] || { echo "El issue de tamaño se repitió" >&2; exit 1; }
 
 echo "→ Restauración en una base y un volumen nuevos"
 start_db "$id-destino"
