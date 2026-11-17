@@ -95,4 +95,31 @@ En un VPS nuevo o tras perder la base, desde `/home/francisco/docker/velora/velo
 
 `ops/respaldos/probar.sh` respalda una base PostGIS con datos y un volumen de originales, restaura en otros nuevos y compara filas, geometría y archivos byte a byte. También comprueba que no se restaure encima de datos y que un respaldo sin base de datos falle. El CI la corre en cada PR y en cada push a `main`; en local requiere Docker y restic.
 
-**Prueba de restauración real:** cada tres meses, restaura la última instantánea en una máquina aparte siguiendo esta guía. Es lo único que demuestra que el respaldo sirve.
+**Prueba de restauración real:** cada tres meses, en una máquina aparte. Es lo único que demuestra que el respaldo sirve. `probar-restauracion.sh` hace todo de una vez:
+
+1. Lee el **100 %** del repositorio (`restic check --read-data`).
+2. Restaura la última instantánea, o las que le pases (`<id-db> <id-originales>`), en una base y un volumen desechables, con `restaurar.sh`.
+3. Comprueba:
+   - que Flyway no tenga migraciones fallidas y que PostGIS responda;
+   - que cada actividad tenga su archivo y su track, y que las geometrías sean válidas;
+   - que cada original restaurado tenga el SHA-256 registrado en `activity_files`, sin faltantes ni sobrantes.
+4. Saca la huella de los datos (`huella.sql`: conteos y md5, sin datos personales) y la compara con la de producción.
+5. Borra la base y el volumen al terminar, también si algo falla.
+
+El script solo lee el repositorio: nunca respalda ni hace `forget`. Como `restic check` toma un lock exclusivo, no lo corras cerca de las 3:30.
+
+```bash
+# En el VPS: huella de producción (solo lectura)
+docker exec -i velora-postgres psql -U velora -d velora -tA < ops/respaldos/huella.sql > huella-produccion.txt
+
+# En la otra máquina, con Docker y restic, desde velora-api/. El respaldo.env es una copia del del VPS, con
+# RESTIC_PASSWORD_FILE apuntando a una copia local de la contraseña. Bórralos al terminar.
+set -a; source /ruta/a/respaldo.env; set +a
+VELORA_HUELLA_ESPERADA=huella-produccion.txt ops/respaldos/probar-restauracion.sh
+```
+
+Termina en `✓ Respaldo restaurable y consistente` o con la lista de problemas y código 1. La huella solo difiere si hubo importaciones o borrados después de la instantánea. Opciones:
+- `VELORA_CHECK_SUBSET=10` lee solo el 10 % del repositorio;
+- `VELORA_CONSERVAR=1` deja la base y el volumen para levantar la API contra la copia.
+
+Registro: 17/11/2026, instantáneas `49e06513` y `3784d3c5`, restauradas en 13 s; huella igual a la de producción.
