@@ -98,7 +98,7 @@ Las importaciones que estaban en proceso se recuperan solas al arrancar: los tra
 ## Monitoreo
 
 - **Salud de producción** (`.github/workflows/salud.yml`): cada 15 minutos revisa que la API responda `UP` en `/healthz`, que la web cargue con su CSP y que el mapa responda 401 sin sesión. Con tres fallas seguidas abre un issue con la etiqueta `caida`, o comenta en el abierto, y lo cierra cuando se recupera. GitHub avisa por correo.
-- **Respaldos:** si fallan, abren un issue con la etiqueta `respaldo`.
+- **Respaldos:** si fallan, o si el repositorio en R2 pasa el 80 % o el 100 % del tope de 2.5 GB (`VELORA_MAX_REPO_GB`), abren un issue con la etiqueta `respaldo`. El aviso de tamaño no detiene el respaldo.
 - **Dependabot:** cada lunes abre PRs de actualización en los tres repositorios. Integrarlos solo si su CI pasa. Los de la API y la web se despliegan solos.
 - **Límite de GitHub:** suspende los workflows programados de un repositorio público tras 60 días sin actividad. Si Velora pasa dos meses sin cambios, reactívalo en **Actions → Salud de producción → Enable workflow**.
 
@@ -151,14 +151,20 @@ Para apagarlo: desconecta Strava desde la web (opcionalmente borrando lo importa
 | Cada | Tarea |
 |---|---|
 | Semana | Revisar e integrar los PRs de Dependabot |
-| 3 meses | Prueba de restauración real en una máquina aparte (`ops/respaldos/README.md`) |
+| 3 meses | Prueba de restauración real en una máquina aparte con `ops/respaldos/probar-restauracion.sh` (`ops/respaldos/README.md` → Prueba). Anótala en el registro de abajo |
 | 6 meses | Regenerar el mapa base con `pnpm basemap` en `velora-web` y copiarlo al volumen `velora-basemap` |
 | Año | Rotar los tokens de R2 y de alertas (`/etc/velora/respaldo.env`) |
+
+### Registro de pruebas de restauración
+
+| Fecha | Instantáneas (db / originales) | Dónde | Resultado |
+|---|---|---|---|
+| 17/11/2026 | `49e06513` / `3784d3c5` (17/11 03:35) | Mac (arm64) | ✓ `restic check --read-data` sin errores. Restaurado en 13 s. Flyway 15 sin fallidas, PostGIS 3.7.0, 154 actividades con archivo y track, 154 de 154 geometrías válidas, 154 originales con el SHA-256 de `activity_files`. Huella (`huella.sql`) igual a la de producción. **Próxima: febrero de 2027** |
 
 ## Recuperación ante desastre (VPS perdido)
 
 1. Un VPS nuevo con Docker, el usuario `francisco` en el grupo `docker` y el túnel de Cloudflare apuntando a los puertos 3007 y 3008.
-2. Clona los dos repositorios en `/home/francisco/docker/velora/`. Copia el `.env` de la API desde tu gestor de contraseñas y crea la red con `docker network create velora-net`.
+2. Clona los dos repositorios en `/home/francisco/docker/velora/`. Copia el `.env` de la API desde tu gestor de contraseñas (con la misma `VELORA_STRAVA_TOKEN_KEY`: los tokens de Strava van cifrados en la base y sin esa llave hay que reconectar Strava) y crea la red con `docker network create velora-net`.
 3. Restaura la base y los originales: `ops/respaldos/README.md` → Restaurar.
 4. Levanta la API y la web, copia el mapa base al volumen `velora-basemap` (o regéneralo) y reinstala el timer de respaldos.
 5. Actualiza los secretos `VPS_HOST` y `VPS_DEPLOY_KEY` de los workflows de despliegue de los dos repositorios.
