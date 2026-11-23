@@ -1,6 +1,6 @@
 plugins {
     java
-    id("org.springframework.boot") version "4.1.2"
+    id("org.springframework.boot") version "4.2.0"
     id("io.spring.dependency-management") version "1.1.7"
     id("com.diffplug.spotless") version "8.11.0"
 }
@@ -35,7 +35,7 @@ dependencies {
     // Índices H3 (Apache-2.0) para las celdas de exploración (ADR-018). Incluye bibliotecas nativas (~2 MB).
     implementation("com.uber:h3:4.5.1")
     // Garmin FIT SDK: FIT Protocol License (propietaria). No redistribuir su código fuente; ver ADR-009.
-    implementation("com.garmin:fit:21.221.0")
+    implementation("com.garmin:fit:21.222.0")
     // Requerido por Argon2PasswordEncoder (ADR-010). Licencia MIT.
     implementation("org.bouncycastle:bcprov-jdk18on:1.87")
     runtimeOnly("org.postgresql:postgresql")
