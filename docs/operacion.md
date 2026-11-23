@@ -133,6 +133,18 @@ docker exec velora-postgres psql -U velora -d velora -c "select backfill_done, b
 
 `last_sync_error = AUTH_REVOKED` significa que hay que volver a conectar Strava desde la web. `STRAVA_UNAVAILABLE` se reintenta solo.
 
+**Permisos concedidos (scope):** al conectar, Velora pide `read,activity:read_all` y rechaza la conexión si Strava no concede `activity:read_all` (`StravaConnections.REQUIRED_SCOPE`). Se guarda tal cual en `strava_connections.scope`.
+
+| Fecha de la verificación | Scope en producción | Conectado desde |
+|---|---|---|
+| 23/11/2026 | `read,activity:read_all` | 15/11/2026 |
+
+Es el mínimo que necesita el conector: `activity:read_all` deja leer las actividades (también las privadas y las de solo seguidores) y sus streams; `read`, el perfil público del atleta. **No incluye** `activity:write` (Velora no puede crear, editar ni borrar nada en Strava) ni `profile:read_all`. Si algún día hiciera falta otro permiso, hay que pedirlo en `StravaConnections` y volver a conectar desde la web. Para revisarlo, sin tocar los tokens:
+
+```bash
+docker exec velora-postgres psql -U velora -d velora -c "select scope, connected_at, updated_at from strava_connections"
+```
+
 **Webhooks:** al arrancar, la API registra sola su suscripción a los eventos de Strava en `https://velora-api.franciscolopez.uk/api/v1/integrations/strava/webhook`. Strava la valida en ese momento; el log dice "Suscripción a webhooks de Strava creada" o "vigente". Qué hace con cada evento:
 
 - Una rodada nueva dispara la sincronización: llega en menos de un minuto, sin esperar los 15.
