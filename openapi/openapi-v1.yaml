@@ -1,7 +1,7 @@
 openapi: 3.1.0
 info:
   title: Velora API
-  version: 1.23.0
+  version: 1.24.0
   description: >
     API personal de analítica de ciclismo. Contrato inicial; ampliar mediante PRs.
     La salud del servicio es operativa y se expone fuera de /api/v1 en /healthz.
@@ -665,6 +665,195 @@ paths:
                 $ref: '#/components/schemas/ImportJob'
         '401': { $ref: '#/components/responses/Unauthorized' }
         '404': { $ref: '#/components/responses/NotFound' }
+  /secondary-recordings:
+    post:
+      summary: Subir una grabación secundaria (respaldo de otro dispositivo)
+      description: >
+        ADR-032. Guarda el archivo y crea un trabajo asíncrono de tipo SECONDARY; su estado se consulta en
+        /imports/{jobId}. La grabación no es una actividad: no aparece en /activities ni en la analítica. Se adjunta
+        sola a la actividad que se solapa al menos un 50 % (secondary-match/1), al subirla o cuando esa actividad
+        llegue después. Idempotente por clientRecordingId: el mismo archivo devuelve la grabación (200) o el trabajo
+        pendiente (202).
+      operationId: uploadSecondaryRecording
+      requestBody:
+        required: true
+        content:
+          multipart/form-data:
+            schema:
+              type: object
+              required: [file, source, clientRecordingId, completeness]
+              properties:
+                file:
+                  type: string
+                  format: binary
+                source:
+                  type: string
+                  enum: [WATCH]
+                clientRecordingId:
+                  type: string
+                  format: uuid
+                  description: Id que genera el dispositivo al empezar a grabar.
+                completeness:
+                  type: string
+                  enum: [COMPLETE, PARTIAL]
+                  description: PARTIAL si el dispositivo la recuperó tras un corte.
+      responses:
+        '200':
+          description: Ya existía con el mismo archivo
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecondaryRecording' }
+        '202':
+          description: Subida aceptada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportAccepted' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '409':
+          description: >
+            code RECORDING_CONFLICT (mismo clientRecordingId con otro archivo) o ALREADY_IMPORTED_AS_ACTIVITY (el
+            archivo ya se importó como actividad).
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+        '413':
+          description: Archivo demasiado grande
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+    get:
+      summary: Listar grabaciones secundarias, de la más reciente a la más antigua
+      operationId: listSecondaryRecordings
+      parameters:
+        - in: query
+          name: status
+          schema: { type: string, enum: [ATTACHED, UNASSIGNED] }
+        - in: query
+          name: limit
+          schema: { type: integer, minimum: 1, maximum: 100, default: 25 }
+        - in: query
+          name: offset
+          schema: { type: integer, minimum: 0, default: 0 }
+      responses:
+        '200':
+          description: Página de grabaciones
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties: false
+                required: [items, total]
+                properties:
+                  items:
+                    type: array
+                    items: { $ref: '#/components/schemas/SecondaryRecording' }
+                  total: { type: integer, minimum: 0 }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+  /secondary-recordings/{recordingId}:
+    parameters:
+      - in: path
+        name: recordingId
+        required: true
+        schema: { type: string, format: uuid }
+    get:
+      summary: Consultar una grabación secundaria
+      operationId: getSecondaryRecording
+      responses:
+        '200':
+          description: Grabación
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecondaryRecording' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+    delete:
+      summary: Borrar una grabación secundaria y su archivo original
+      operationId: deleteSecondaryRecording
+      responses:
+        '204': { description: Grabación borrada }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: code PROMOTION_PENDING (se está recuperando como actividad)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /secondary-recordings/{recordingId}/activity:
+    put:
+      summary: Adjuntar a mano a una actividad, o desasignar con activityId null
+      description: La asignación automática no vuelve a mover una grabación decidida por el usuario.
+      operationId: assignSecondaryRecording
+      parameters:
+        - in: path
+          name: recordingId
+          required: true
+          schema: { type: string, format: uuid }
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties: false
+              required: [activityId]
+              properties:
+                activityId:
+                  type: [string, 'null']
+                  format: uuid
+      responses:
+        '200':
+          description: Grabación actualizada
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/SecondaryRecording' }
+        '400': { $ref: '#/components/responses/BadRequest' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+  /secondary-recordings/{recordingId}/promote:
+    post:
+      summary: Recuperar como actividad una grabación sin asignar
+      description: >
+        Para cuando el dispositivo principal no grabó. Crea un trabajo de importación de tipo PROMOTE con el mismo
+        original; al completarse, la actividad existe y la grabación secundaria deja de existir (una sola copia).
+      operationId: promoteSecondaryRecording
+      parameters:
+        - in: path
+          name: recordingId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '202':
+          description: Recuperación aceptada (o ya pendiente)
+          content:
+            application/json:
+              schema: { $ref: '#/components/schemas/ImportAccepted' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
+        '404': { $ref: '#/components/responses/NotFound' }
+        '409':
+          description: code RECORDING_ATTACHED (está adjunta; desasignarla antes)
+          content:
+            application/problem+json:
+              schema: { $ref: '#/components/schemas/Problem' }
+  /activities/{activityId}/secondary-recordings:
+    get:
+      summary: Grabaciones secundarias adjuntas a una actividad
+      operationId: listActivitySecondaryRecordings
+      parameters:
+        - in: path
+          name: activityId
+          required: true
+          schema: { type: string, format: uuid }
+      responses:
+        '200':
+          description: Grabaciones adjuntas (puede estar vacía)
+          content:
+            application/json:
+              schema:
+                type: array
+                items: { $ref: '#/components/schemas/SecondaryRecording' }
+        '401': { $ref: '#/components/responses/Unauthorized' }
   /dashboard/summary:
     get:
       summary: Resumen del dashboard para un periodo
@@ -1008,6 +1197,34 @@ components:
         errorId:
           type: string
           description: Identificador para correlacionar errores 500 con los logs. Es el X-Request-Id de la solicitud.
+        code:
+          type: string
+          description: Código estable para el cliente en algunos conflictos (p. ej. RECORDING_CONFLICT).
+    SecondaryRecording:
+      type: object
+      additionalProperties: false
+      description: Archivo de otro dispositivo guardado junto a una actividad, sin ser una actividad (ADR-032).
+      required:
+        [id, source, clientRecordingId, status, activityId, attachedBy, completeness, startedAt, endedAt,
+         elapsedTimeSeconds, distanceMeters, pointCount, averageHeartRateBpm, maxHeartRateBpm, receivedAt]
+      properties:
+        id: { type: string, format: uuid }
+        source: { type: string, enum: [WATCH] }
+        clientRecordingId: { type: string, format: uuid }
+        status: { type: string, enum: [ATTACHED, UNASSIGNED] }
+        activityId: { type: [string, 'null'], format: uuid }
+        attachedBy:
+          type: [string, 'null']
+          enum: [AUTO, USER, null]
+        completeness: { type: string, enum: [COMPLETE, PARTIAL] }
+        startedAt: { type: string, format: date-time }
+        endedAt: { type: string, format: date-time }
+        elapsedTimeSeconds: { type: number, minimum: 0 }
+        distanceMeters: { type: [number, 'null'], minimum: 0 }
+        pointCount: { type: integer, minimum: 0 }
+        averageHeartRateBpm: { type: [integer, 'null'] }
+        maxHeartRateBpm: { type: [integer, 'null'] }
+        receivedAt: { type: string, format: date-time }
     StravaStatus:
       type: object
       additionalProperties: false
@@ -1398,7 +1615,8 @@ components:
         jobId: { type: string, format: uuid }
         kind:
           type: string
-          enum: [IMPORT, REPROCESS]
+          enum: [IMPORT, REPROCESS, SECONDARY, PROMOTE]
+          description: SECONDARY y PROMOTE son de grabaciones secundarias (ADR-032).
         status:
           type: string
           enum: [QUEUED, PROCESSING, COMPLETED, DUPLICATE, REJECTED, FAILED]
@@ -1406,6 +1624,12 @@ components:
           type: [string, 'null']
           format: uuid
           description: Actividad creada (COMPLETED) o la ya existente (DUPLICATE).
+        secondaryRecordingId:
+          type: [string, 'null']
+          format: uuid
+          description: >
+            SECONDARY: grabación creada (COMPLETED) o la ya existente con el mismo archivo (DUPLICATE). PROMOTE: la
+            grabación que se recupera.
         errorCode:
           type: [string, 'null']
           description: >

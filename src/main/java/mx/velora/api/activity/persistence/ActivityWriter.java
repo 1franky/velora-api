@@ -40,6 +40,14 @@ public class ActivityWriter {
                 .optional();
     }
 
+    /** Dueño de la actividad, si existe. */
+    public Optional<UUID> findOwner(UUID activityId) {
+        return jdbc.sql("SELECT user_id FROM activities WHERE id = :id")
+                .param("id", activityId)
+                .query(UUID.class)
+                .optional();
+    }
+
     /** Valor efectivo por métrica: el del dispositivo si existe; si no, el derivado. */
     public record Effective(Map<Metric, Double> values, Map<Metric, Metric.Source> provenance) {}
 
@@ -124,11 +132,14 @@ public class ActivityWriter {
      * Track como {@code MultiLineString} con un tramo por segmento. Los segmentos con menos de dos posiciones se
      * omiten. Devuelve {@code false} si no hay ningún tramo (p. ej. rodillo).
      */
-    public boolean insertTrack(UUID activityId, NewActivity.Samples samples) {
+    /** Recorrido como WKT {@code MULTILINESTRING}, un tramo por segmento; vacío si no hay al menos dos puntos. */
+    public record TrackWkt(String wkt, int points) {}
+
+    public static java.util.Optional<TrackWkt> trackWkt(NewActivity.Samples samples) {
         var lat = samples.streams().get(StreamType.LATITUDE);
         var lon = samples.streams().get(StreamType.LONGITUDE);
         if (lat == null || lon == null) {
-            return false;
+            return java.util.Optional.empty();
         }
         var segments = samples.segments();
         var lines = new ArrayList<String>();
@@ -150,9 +161,18 @@ public class ActivityWriter {
             points += line.split(",").length;
         }
         if (lines.isEmpty()) {
+            return java.util.Optional.empty();
+        }
+        return java.util.Optional.of(new TrackWkt("MULTILINESTRING(" + String.join(",", lines) + ")", points));
+    }
+
+    public boolean insertTrack(UUID activityId, NewActivity.Samples samples) {
+        var track = trackWkt(samples);
+        if (track.isEmpty()) {
             return false;
         }
-        var wkt = "MULTILINESTRING(" + String.join(",", lines) + ")";
+        var wkt = track.get().wkt();
+        var points = track.get().points();
         jdbc.sql("""
                         WITH g AS (SELECT ST_GeomFromText(:wkt, 4326) AS geom)
                         INSERT INTO activity_tracks (activity_id, route_geom, start_point, end_point, bbox, point_count)

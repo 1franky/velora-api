@@ -33,10 +33,23 @@ public class ImportJobRepository {
             int maxAttempts,
             String kind,
             @Nullable UUID activityId,
-            String source) {
+            String source,
+            @Nullable UUID clientRecordingId,
+            @Nullable String recordingCompleteness,
+            @Nullable UUID secondaryRecordingId) {
 
         public boolean isReprocess() {
             return "REPROCESS".equals(kind);
+        }
+
+        /** Subida de una grabación secundaria (ADR-032): se guarda junto a una actividad, no como actividad. */
+        public boolean isSecondary() {
+            return "SECONDARY".equals(kind);
+        }
+
+        /** Recuperación de una grabación secundaria como actividad (ADR-032). */
+        public boolean isPromote() {
+            return "PROMOTE".equals(kind);
         }
 
         /** Creado por la sincronización con Strava: el original es un {@code StravaActivityDocument}. */
@@ -51,10 +64,14 @@ public class ImportJobRepository {
             String kind,
             String status,
             @Nullable UUID activityId,
+            @Nullable UUID secondaryRecordingId,
             @Nullable String errorCode,
             @Nullable String errorDetail,
             String warningsJson,
             List<UUID> possibleDuplicateIds) {}
+
+    /** Subida de grabación secundaria en cola o en proceso. */
+    public record PendingSecondary(UUID jobId, byte[] sha256) {}
 
     private final JdbcClient jdbc;
 
@@ -139,6 +156,127 @@ public class ImportJobRepository {
                 .update();
     }
 
+    /** Subida de una grabación secundaria (ADR-032). */
+    public void insertSecondary(
+            UUID id,
+            UUID userId,
+            String fileName,
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            UUID clientRecordingId,
+            String completeness,
+            int maxAttempts,
+            Instant now) {
+        jdbc.sql("""
+                        INSERT INTO import_jobs (
+                            id, user_id, kind, source, status, stage, file_name, storage_key, sha256, file_size_bytes,
+                            client_recording_id, recording_completeness, max_attempts, next_attempt_at, created_at,
+                            updated_at)
+                        VALUES (
+                            :id, :user, 'SECONDARY', 'UPLOAD', 'QUEUED', 'STORED', :name, :key, :sha, :size,
+                            :client, :completeness, :maxAttempts, :now, :now, :now)
+                        """)
+                .param("id", id)
+                .param("user", userId)
+                .param("name", fileName)
+                .param("key", storageKey)
+                .param("sha", sha256)
+                .param("size", sizeBytes)
+                .param("client", clientRecordingId)
+                .param("completeness", completeness)
+                .param("maxAttempts", maxAttempts)
+                .param("now", Timestamp.from(now))
+                .update();
+    }
+
+    /** Recuperación como actividad de una grabación secundaria: reutiliza su original (ADR-032). */
+    public void insertPromote(
+            UUID id,
+            UUID userId,
+            UUID recordingId,
+            String storageKey,
+            byte[] sha256,
+            long sizeBytes,
+            int maxAttempts,
+            Instant now) {
+        jdbc.sql("""
+                        INSERT INTO import_jobs (
+                            id, user_id, kind, source, status, stage, file_name, storage_key, sha256, file_size_bytes,
+                            secondary_recording_id, max_attempts, next_attempt_at, created_at, updated_at)
+                        VALUES (
+                            :id, :user, 'PROMOTE', 'UPLOAD', 'QUEUED', 'STORED', 'grabación secundaria', :key, :sha,
+                            :size, :recording, :maxAttempts, :now, :now, :now)
+                        """)
+                .param("id", id)
+                .param("user", userId)
+                .param("key", storageKey)
+                .param("sha", sha256)
+                .param("size", sizeBytes)
+                .param("recording", recordingId)
+                .param("maxAttempts", maxAttempts)
+                .param("now", Timestamp.from(now))
+                .update();
+    }
+
+    /** Subida pendiente con ese id de dispositivo, si existe. */
+    public Optional<PendingSecondary> pendingSecondary(UUID userId, UUID clientRecordingId) {
+        return jdbc.sql("""
+                        SELECT id, sha256 FROM import_jobs
+                        WHERE user_id = :user AND client_recording_id = :client AND kind = 'SECONDARY'
+                          AND status IN ('QUEUED', 'PROCESSING')
+                        """)
+                .param("user", userId)
+                .param("client", clientRecordingId)
+                .query((rs, n) -> new PendingSecondary(rs.getObject("id", UUID.class), rs.getBytes("sha256")))
+                .optional();
+    }
+
+    /** Recuperación pendiente de esa grabación, si existe. */
+    public Optional<UUID> pendingPromote(UUID userId, UUID recordingId) {
+        return jdbc.sql("""
+                        SELECT id FROM import_jobs
+                        WHERE user_id = :user AND secondary_recording_id = :recording AND kind = 'PROMOTE'
+                          AND status IN ('QUEUED', 'PROCESSING')
+                        """)
+                .param("user", userId)
+                .param("recording", recordingId)
+                .query(UUID.class)
+                .optional();
+    }
+
+    public void completeSecondary(
+            UUID id, UUID recordingId, @Nullable String format, String warningsJson, Instant now) {
+        jdbc.sql("""
+                        UPDATE import_jobs SET status = 'COMPLETED', stage = 'COMPLETED',
+                            secondary_recording_id = :recording, format = :format,
+                            warnings = CAST(:warnings AS jsonb), error_code = NULL, error_detail_safe = NULL,
+                            locked_until = NULL, finished_at = :now, updated_at = :now
+                        WHERE id = :id
+                        """)
+                .param("recording", recordingId)
+                .param("format", format, Types.VARCHAR)
+                .param("warnings", warningsJson)
+                .param("now", Timestamp.from(now))
+                .param("id", id)
+                .update();
+    }
+
+    /** La grabación secundaria ya existía con ese mismo archivo: el trabajo apunta a ella. */
+    public void duplicateSecondary(UUID id, UUID existingRecordingId, @Nullable String format, Instant now) {
+        jdbc.sql("""
+                        UPDATE import_jobs SET status = 'DUPLICATE', stage = 'DUPLICATE',
+                            secondary_recording_id = :recording, format = :format, locked_until = NULL,
+                            finished_at = :now, updated_at = :now
+                        WHERE id = :id
+                        """)
+                .param("recording", existingRecordingId)
+                .param("format", format, Types.VARCHAR)
+                .param("now", Timestamp.from(now))
+                .param("id", id)
+                .update();
+    }
+
     /** Reproceso pendiente (en cola o en proceso) de una actividad, si existe. */
     public Optional<UUID> pendingReprocess(UUID userId, UUID activityId) {
         return jdbc.sql("""
@@ -203,7 +341,8 @@ public class ImportJobRepository {
                             LIMIT :batch
                             FOR UPDATE SKIP LOCKED)
                         RETURNING j.id, j.user_id, j.storage_key, j.sha256, j.file_size_bytes, j.bike_id, j.device_id,
-                                  j.activity_title, j.attempt_count, j.max_attempts, j.kind, j.activity_id, j.source
+                                  j.activity_title, j.attempt_count, j.max_attempts, j.kind, j.activity_id, j.source,
+                                  j.client_recording_id, j.recording_completeness, j.secondary_recording_id
                         """)
                 .param("lockedUntil", Timestamp.from(now.plus(lockDuration)))
                 .param("now", Timestamp.from(now))
@@ -221,7 +360,10 @@ public class ImportJobRepository {
                         rs.getInt("max_attempts"),
                         rs.getString("kind"),
                         rs.getObject("activity_id", UUID.class),
-                        rs.getString("source")))
+                        rs.getString("source"),
+                        rs.getObject("client_recording_id", UUID.class),
+                        rs.getString("recording_completeness"),
+                        rs.getObject("secondary_recording_id", UUID.class)))
                 .list();
     }
 
@@ -313,8 +455,8 @@ public class ImportJobRepository {
 
     public Optional<JobView> find(UUID userId, UUID jobId) {
         return jdbc.sql("""
-                        SELECT id, kind, status, activity_id, error_code, error_detail_safe, warnings::text AS warnings,
-                               possible_duplicate_ids
+                        SELECT id, kind, status, activity_id, secondary_recording_id, error_code, error_detail_safe,
+                               warnings::text AS warnings, possible_duplicate_ids
                         FROM import_jobs WHERE id = :id AND user_id = :user
                         """)
                 .param("id", jobId)
@@ -331,6 +473,7 @@ public class ImportJobRepository {
                 rs.getString("kind"),
                 rs.getString("status"),
                 rs.getObject("activity_id", UUID.class),
+                rs.getObject("secondary_recording_id", UUID.class),
                 rs.getString("error_code"),
                 rs.getString("error_detail_safe"),
                 rs.getString("warnings"),

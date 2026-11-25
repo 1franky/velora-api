@@ -89,9 +89,11 @@ class AccountExport {
         put(zip, "bikes.json", bikes);
         put(zip, "devices.json", devices);
         var activityCount = activities.writeTo(userId, zip, "activities");
+        var secondaryCount = activities.writeSecondaryTo(userId, zip, "secondary-recordings");
 
         var counts = new LinkedHashMap<String, Integer>();
         counts.put("activities", activityCount);
+        counts.put("secondaryRecordings", secondaryCount);
         counts.put("bikes", bikes.size());
         counts.put("devices", devices.size());
         var manifest = new LinkedHashMap<String, Object>();
