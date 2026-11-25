@@ -37,12 +37,19 @@ public class ActivityExport {
     private final ActivityQueries queries;
     private final OriginalFileStore store;
     private final JsonMapper json;
+    private final SecondaryRecordings secondaryRecordings;
 
-    ActivityExport(JdbcClient jdbc, ActivityQueries queries, OriginalFileStore store, JsonMapper json) {
+    ActivityExport(
+            JdbcClient jdbc,
+            ActivityQueries queries,
+            OriginalFileStore store,
+            JsonMapper json,
+            SecondaryRecordings secondaryRecordings) {
         this.jdbc = jdbc;
         this.queries = queries;
         this.store = store;
         this.json = json;
+        this.secondaryRecordings = secondaryRecordings;
     }
 
     /** @return número de actividades escritas */
@@ -65,6 +72,32 @@ public class ActivityExport {
             written++;
         }
         return written;
+    }
+
+    /**
+     * Grabaciones secundarias (ADR-032), una carpeta por grabación con {@code recording.json} y su original.
+     *
+     * @return número de grabaciones escritas
+     */
+    public int writeSecondaryTo(UUID userId, ZipOutputStream zip, String folder) throws IOException {
+        var recordings = secondaryRecordings.all(userId);
+        for (var recording : recordings) {
+            var prefix = folder + "/" + recording.id() + "/";
+            var node = json.valueToTree(recording).asObject();
+            node.remove("original");
+            put(
+                    zip,
+                    prefix + "recording.json",
+                    json.writerWithDefaultPrettyPrinter().writeValueAsBytes(node));
+            var original = recording.original();
+            zip.putNextEntry(
+                    new ZipEntry(prefix + "original." + recording.format().toLowerCase(Locale.ROOT)));
+            try (var in = store.open(new StoredFile(original.storageKey(), original.sha256(), original.sizeBytes()))) {
+                in.transferTo(zip);
+            }
+            zip.closeEntry();
+        }
+        return recordings.size();
     }
 
     private void writeActivity(ZipOutputStream zip, String prefix, ActivityQueries.Detail detail, List<?> laps)

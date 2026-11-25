@@ -85,7 +85,7 @@ public class ImportWorker {
 
     /** Procesa un trabajo con su id en el MDC (cada línea de log lo lleva) y registra resultado y duración. */
     private void process(ImportJobRepository.ClaimedJob job) {
-        var kind = job.isReprocess() ? "reprocess" : "import";
+        var kind = job.kind().toLowerCase(Locale.ROOT);
         var sample = Timer.start(meters);
         var outcome = "failed";
         MDC.put(MDC_KEY, job.id().toString());

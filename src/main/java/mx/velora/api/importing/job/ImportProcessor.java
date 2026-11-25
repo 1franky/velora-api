@@ -13,6 +13,8 @@ import mx.velora.api.activity.ActivityRegistration;
 import mx.velora.api.activity.ActivityRegistration.DuplicateOriginalException;
 import mx.velora.api.activity.ActivityReprocessing;
 import mx.velora.api.activity.NewActivity;
+import mx.velora.api.activity.SecondaryRecordings;
+import mx.velora.api.activity.SecondaryRecordings.DuplicateRecordingException;
 import mx.velora.api.catalog.CatalogLookup;
 import mx.velora.api.identity.UserTimeZones;
 import mx.velora.api.importing.ActivityFileReader;
@@ -59,6 +61,7 @@ class ImportProcessor {
     private final Clock clock;
     private final ActivityFileReader reader;
     private final ActivityValidator validator;
+    private final SecondaryRecordings secondaryRecordings;
 
     ImportProcessor(
             ImportJobRepository jobs,
@@ -70,7 +73,9 @@ class ImportProcessor {
             CatalogLookup catalog,
             UserTimeZones timeZones,
             ImportProperties properties,
-            Clock clock) {
+            Clock clock,
+            SecondaryRecordings secondaryRecordings) {
+        this.secondaryRecordings = secondaryRecordings;
         this.jobs = jobs;
         this.store = store;
         this.registration = registration;
@@ -106,13 +111,17 @@ class ImportProcessor {
             format = imported.format().name();
             var validated = validator.validate(imported);
             var derived = DerivedMetricsCalculator.compute(validated.activity(), DerivedMetrics.Parameters.DEFAULT);
-            return job.isReprocess()
-                    ? reprocess(job, validated, derived, format)
-                    : handle(job, validated, derived, format);
+            if (job.isReprocess()) {
+                return reprocess(job, validated, derived, format);
+            }
+            if (job.isSecondary()) {
+                return handleSecondary(job, validated, derived, format);
+            }
+            return handle(job, validated, derived, format);
         } catch (ImportRejectedException e) {
             jobs.reject(job.id(), e.reason().name(), ImportMessages.detail(e), clock.instant());
-            // Un reproceso rechazado deja la actividad y su original intactos.
-            if (!job.isReprocess()) {
+            // Un reproceso o una recuperación rechazados dejan intactos la actividad o la grabación y su original.
+            if (!job.isReprocess() && !job.isPromote()) {
                 deleteOriginal(job);
             }
             return Outcome.REJECTED;
@@ -151,7 +160,9 @@ class ImportProcessor {
         possibleDuplicates.addAll(duplicates.near(job.userId(), validated.footprint()));
 
         try {
-            var id = registration.register(ActivityMapper.toNewActivity(validated, derived, context(job, activity)));
+            var id = registration.register(
+                    ActivityMapper.toNewActivity(validated, derived, context(job, activity)),
+                    job.isPromote() ? job.secondaryRecordingId() : null);
             possibleDuplicates.remove(id);
             jobs.complete(
                     job.id(),
@@ -163,6 +174,27 @@ class ImportProcessor {
             return Outcome.COMPLETED;
         } catch (DuplicateOriginalException e) {
             return finishAsDuplicateOrOwn(job, e.existingActivityId(), format, validated, possibleDuplicates);
+        }
+    }
+
+    /**
+     * Grabación secundaria (ADR-032): el mismo pipeline de lectura y validación, pero se guarda junto a una actividad
+     * en lugar de crear una. Sin deduplicación por heurística: se espera que coincida con una actividad.
+     */
+    private Outcome handleSecondary(
+            ClaimedJob job, ValidatedActivity validated, DerivedMetrics derived, String format) {
+        var processed = ActivityMapper.toNewActivity(validated, derived, context(job, validated.activity()));
+        var clientId = java.util.Objects.requireNonNull(job.clientRecordingId(), "clientRecordingId");
+        var completeness = java.util.Objects.requireNonNull(job.recordingCompleteness(), "recordingCompleteness");
+        try {
+            var id = secondaryRecordings.register(
+                    clientId, mx.velora.api.activity.SecondaryRecording.SOURCE_WATCH, completeness, processed);
+            jobs.completeSecondary(job.id(), id, format, warnings(validated, List.of()), clock.instant());
+            return Outcome.COMPLETED;
+        } catch (DuplicateRecordingException e) {
+            jobs.duplicateSecondary(job.id(), e.existingRecordingId(), format, clock.instant());
+            deleteOriginal(job);
+            return Outcome.DUPLICATE;
         }
     }
 
@@ -201,7 +233,10 @@ class ImportProcessor {
             return Outcome.COMPLETED;
         }
         jobs.duplicate(job.id(), existing, format, clock.instant());
-        deleteOriginal(job);
+        // En una recuperación el original sigue siendo de la grabación secundaria.
+        if (!job.isPromote()) {
+            deleteOriginal(job);
+        }
         return Outcome.DUPLICATE;
     }
 

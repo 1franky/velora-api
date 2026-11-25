@@ -22,11 +22,17 @@ public class ActivityRegistration {
     static final int MAX_TITLE_LENGTH = 200;
 
     private final ActivityWriter writer;
+    private final SecondaryRecordings secondaryRecordings;
     private final Clock clock;
     private final ApplicationEventPublisher events;
 
-    ActivityRegistration(ActivityWriter writer, Clock clock, ApplicationEventPublisher events) {
+    ActivityRegistration(
+            ActivityWriter writer,
+            SecondaryRecordings secondaryRecordings,
+            Clock clock,
+            ApplicationEventPublisher events) {
         this.writer = writer;
+        this.secondaryRecordings = secondaryRecordings;
         this.clock = clock;
         this.events = events;
     }
@@ -38,6 +44,15 @@ public class ActivityRegistration {
      */
     @Transactional
     public UUID register(NewActivity cmd) {
+        return register(cmd, null);
+    }
+
+    /**
+     * Como {@link #register(NewActivity)}, y además quita la grabación secundaria {@code promotedRecordingId} en la
+     * misma transacción: se recuperó como esta actividad (ADR-032) y no deben quedar dos copias lógicas.
+     */
+    @Transactional
+    public UUID register(NewActivity cmd, @Nullable UUID promotedRecordingId) {
         var existing = writer.findActivityWithOriginal(cmd.userId(), cmd.file().sha256());
         if (existing.isPresent()) {
             throw new DuplicateOriginalException(existing.get());
@@ -57,6 +72,12 @@ public class ActivityRegistration {
         writer.insertLaps(id, cmd.laps());
         writer.insertStreams(id, cmd.samples());
         writer.insertFile(id, cmd, now);
+        if (promotedRecordingId != null) {
+            secondaryRecordings.consume(cmd.userId(), promotedRecordingId);
+        }
+        var elapsed = effective.values().get(Metric.ELAPSED_TIME);
+        secondaryRecordings.attachPendingTo(
+                id, cmd.userId(), cmd.startedAt(), cmd.startedAt().plusMillis(Math.round(elapsed * 1000)));
         events.publishEvent(new ActivityImported(id, cmd.userId(), cmd.startedAt()));
         return id;
     }
